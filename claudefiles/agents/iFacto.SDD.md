@@ -55,7 +55,7 @@ Every phase of the cycle publishes both projects to the sandbox and runs tests t
 
 ## Workflow
 
-⛔ **Required toolset** (always-on Required Toolset Gate — run it at Step 1A, right after the start time is recorded): the AL tooling (`al_build`, `al_downloadsymbols`, `al_symbolsearch`, `al_getdiagnostics`), `mcp-server-atlassian-jira` (when a JIRA issue is referenced), `microsoft-learn-mcp`, `al-object-id-ninja`, `bc-code-atlas`, the BCQuality knowledge base on disk (`iFacto.company-guidelines`), and the sandbox from `.vscode/launch.json` (its own hard stop). Any of them missing or unreachable → stop, report what unblocks it, write no test and no code.
+⛔ **Required toolset** (always-on Required Toolset Gate — run it at Step 1A, right after the start time is recorded): the AL tooling (`al_build`, `al_downloadsymbols`, `al_symbolsearch`, `al_getdiagnostics`), `mcp-server-atlassian-jira` (when a JIRA issue is referenced), `microsoft-learn-mcp`, `al-object-id-ninja`, `bc-code-atlas`, the BCQuality knowledge base on disk (`iFacto.company-guidelines`), the sandbox from `.vscode/launch.json` (its own hard stop), and the Azure CLI (`az`) logged in to that sandbox's tenant (`iFacto.sandbox-switch`, Step 1.6 — the check is its own probe). Any of them missing or unreachable → stop, report what unblocks it, write no test and no code.
 
 ### Step -1: Record Start Time (MANDATORY FIRST STEP)
 
@@ -109,7 +109,7 @@ Read `.vscode/launch.json` and locate a configuration with `"environmentType": "
 
 | `launch.json` state | Action |
 |---|---|
-| A configuration with `"environmentType": "Sandbox"` exists | ✅ Proceed to Step 2 |
+| A configuration with `"environmentType": "Sandbox"` exists | ✅ Proceed to Step 1.6 |
 | Only OnPrem configurations (`"server"` / `"serverInstance"`, or no `"environmentType"`) | ⛔ STOP |
 | Only `"environmentType": "Production"` | ⛔ STOP |
 | No `.vscode/launch.json` | ⛔ STOP |
@@ -117,6 +117,21 @@ Read `.vscode/launch.json` and locate a configuration with `"environmentType": "
 > ⛔ **Hard stop:** on any ⛔ row, report the message below and end the session. Do NOT write tests, stubs, or production code, do NOT build, and do NOT offer to run the cycle "without tests" — the entire Red-Green-Mutate cycle depends on executing tests on a sandbox.
 >
 > ❌ **No SaaS sandbox configured** — the SDD cycle requires a `.vscode/launch.json` configuration with `"environmentType": "Sandbox"` and an `"environmentName"`. OnPrem and Production environments are not supported. Add a sandbox launch configuration and re-run.
+
+### Step 1.6: Sandbox Preflight — Foreign DEV Extensions (MANDATORY gate — before any code is written)
+
+A partner sandbox moves from customer to customer, and the previous customer's DEV extensions stay installed. Check it once per cycle, now — before the first publish, while the developer is still at the keyboard.
+
+Follow the `iFacto.sandbox-switch` skill with both projects (App and Test). It compares the DEV extensions installed in the launch.json sandbox with the app ids of this workspace and the dependencies in their `app.json`:
+
+| Skill result | Action |
+|---|---|
+| `clean` | Say so in one line, then Step 2 |
+| `skipped` | The sandbox is in a customer tenant you reach as a delegated admin — no other customer's leftovers can be there. Say so in one line, then Step 2 |
+| `foreign` | Ask with `AskUserQuestion` exactly as the skill prescribes — uninstall and keep data (Recommended) / uninstall and delete data / leave them. **Always ask**, also when the answer looks obvious: never uninstall on your own. Uninstall only what the developer agreed to, then Step 2 |
+| The check fails | ⛔ Hard stop — report the error and what unblocks it (`az login --tenant <tenant>`, the Azure CLI install, extension-management permission in the sandbox). Write no test and no code |
+
+Later publishes in this cycle (Steps 4, 5.5, 7, 8, 9) do not repeat the check.
 
 ### Step 2: Load Company Rules, Test Guidance & Relevant Skills
 
@@ -234,7 +249,7 @@ Follow the `iFacto.al-build-validation` skill on **both** projects:
 
 Both projects must compile **and** publish cleanly before any test run.
 
-> ⛔ **Hard stop:** A compile or publish error on either project is a **blocker** — it is NOT a RED state. Stop immediately, report the exact error(s) to the user, and wait for the issue to be resolved before proceeding to Step 5.
+> ⛔ **Hard stop:** A compile or publish error on either project is a **blocker** — it is NOT a RED state. Stop immediately, report the exact error(s) to the user, and wait for the issue to be resolved before proceeding to Step 5. When the developer chose in Step 1.6 to leave foreign DEV extensions installed and the publish fails on an object ID another extension owns, name that extension in the report.
 
 ### Step 5: Run Tests — Confirm RED
 
@@ -404,6 +419,7 @@ These rules are enforced unconditionally:
 10. **Always publish before running tests** — `iFacto.bc-saas-test-runner` does NOT publish; it runs `al runtests` against whatever is currently deployed. Build and publish both App and Test projects to the sandbox immediately before every test run; without that, the sandbox may still run the previous version of the code and the results are unreliable
 11. **Download dependencies before building** — if a build reports unresolved symbols or missing packages, run `ms-dynamics-smb.al/al_downloadsymbols` for the App project and then the Test project before attempting `al_build`; never skip this step and assume the error is in your code
 12. **All object IDs come from AL Object ID Ninja** — every new object, field, and enum value in BOTH projects (production code, RED stubs, test codeunits, test doubles) gets its ID reserved via the `iFacto.object-id-assignment` skill; hand-picked, guessed, incremented, or `idRanges`-derived IDs are forbidden, and if the Ninja tool is unavailable, stop and report instead of falling back
+13. **No foreign DEV extension is removed without asking** — Step 1.6 lists the DEV extensions in the sandbox that do not belong to this workspace (`iFacto.sandbox-switch`); the developer decides every time whether they are uninstalled, and whether their data goes with them. A check that cannot run is a hard stop, not a reason to publish blind; only a sandbox in a delegated-admin customer tenant comes back `skipped` and continues
 
 ## Security
 
