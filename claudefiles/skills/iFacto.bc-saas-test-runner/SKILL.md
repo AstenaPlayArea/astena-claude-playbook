@@ -55,12 +55,16 @@ Read `.vscode/launch.json` from the project root.
 
 | `launch.json` configuration | Verdict |
 |---|---|
+| **Any** configuration whose `"environmentName"` or `"name"` contains `QA` (any casing) | 🛑 QA — STOP, also when it is a Sandbox |
 | Has `"environmentName"` + `"environmentType": "Sandbox"` | ✅ SaaS Sandbox — proceed |
 | Has `"environmentType": "Production"` | ⛔ Production — STOP |
 | Has `"server"` / `"serverInstance"`, or no `"environmentType"` | ⛔ OnPrem — STOP |
 | No configuration with `"environmentType": "Sandbox"` | ⛔ STOP |
 
 If the file contains multiple configurations, use the first one with `"environmentType": "Sandbox"`. If none qualifies, stop.
+
+**If a QA environment is detected** (any configuration — not only the first sandbox one — whose `"environmentName"` or `"name"` contains `QA` in any casing): STOP. Do not pick another configuration, do not ask, do not edit `launch.json`. Report:
+> 🛑 **QA environment in launch.json** — configuration `<name>` targets `<environmentName>`. Tests are never run against, and code is never published to, a QA environment. Remove the QA configuration from `.vscode/launch.json` and re-run.
 
 **If OnPrem is detected** (a `"server"` / `"serverInstance"` configuration, or no `"environmentType"`): STOP. Report:
 > ❌ **OnPrem environment detected** — this skill runs tests against BC SaaS sandboxes only.
@@ -154,6 +158,7 @@ For failures, include the full error message from the CLI output.
 | `al` CLI not found | STOP — provide install command (see Prerequisites) |
 | Authentication failure | Retry with `--nocache`; if still failing, ask user to re-authenticate manually |
 | Codeunit not found on server | Warn — app may not be deployed or codeunit ID is wrong |
+| QA environment in launch.json | STOP — never run tests against or publish to QA, also when it is a Sandbox |
 | Production environment detected | STOP — do not run tests against production |
 | OnPrem environment detected | STOP — do not run tests against OnPrem; require a Sandbox configuration |
 | No Sandbox configuration in launch.json | STOP — do not fall back to any other environment type |
@@ -161,7 +166,7 @@ For failures, include the full error message from the CLI output.
 
 ## Constraints
 
-- **SaaS sandbox only** — will not run against OnPrem or Production; `"environmentType": "Sandbox"` is required in `launch.json`
+- **SaaS sandbox only** — will not run against OnPrem, Production or a QA environment; `"environmentType": "Sandbox"` is required in `launch.json`
 - **App must be pre-deployed** — this skill does not publish; use `al-build-validation` for that
 - **One codeunit per command** — `al runtests` takes a single `<codeunitId>`; run multiple times for multiple codeunits
 - **Requires `al` CLI prerelease** — `al runtests` is part of `microsoft.dynamics.businesscentral.development.tools` prerelease (`18.x` or later)

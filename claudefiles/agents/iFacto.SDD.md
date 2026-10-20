@@ -109,7 +109,8 @@ Read `.vscode/launch.json` and locate a configuration with `"environmentType": "
 
 | `launch.json` state | Action |
 |---|---|
-| A configuration with `"environmentType": "Sandbox"` exists | ✅ Proceed to Step 1.6 |
+| **Any** configuration targets a QA environment (see below) | 🛑 HARD STOP — never publish to QA |
+| A configuration with `"environmentType": "Sandbox"` exists and none targets QA | ✅ Proceed to Step 1.6 |
 | Only OnPrem configurations (`"server"` / `"serverInstance"`, or no `"environmentType"`) | ⛔ STOP |
 | Only `"environmentType": "Production"` | ⛔ STOP |
 | No `.vscode/launch.json` | ⛔ STOP |
@@ -117,6 +118,18 @@ Read `.vscode/launch.json` and locate a configuration with `"environmentType": "
 > ⛔ **Hard stop:** on any ⛔ row, report the message below and end the session. Do NOT write tests, stubs, or production code, do NOT build, and do NOT offer to run the cycle "without tests" — the entire Red-Green-Mutate cycle depends on executing tests on a sandbox.
 >
 > ❌ **No SaaS sandbox configured** — the SDD cycle requires a `.vscode/launch.json` configuration with `"environmentType": "Sandbox"` and an `"environmentName"`. OnPrem and Production environments are not supported. Add a sandbox launch configuration and re-run.
+
+#### 🛑 NEVER publish to a QA environment
+
+A QA environment is where the customer and the consultants test and accept — the SDD cycle publishes stubs, mutated code and test apps, and none of that may ever land there. A QA environment is usually a SaaS **sandbox**, so `"environmentType": "Sandbox"` does **not** make it safe.
+
+A configuration **targets QA** when its `"environmentName"` or its `"name"` contains `QA` in any casing (`QA`, `qa`, `CustomerQA`, `QA-Sandbox`, `Sandbox_qa`, …). Check **every** configuration in `launch.json`, not only the first sandbox one: the publish takes a configuration from the same file, and a QA entry anywhere in it can be picked.
+
+> 🛑 **Hard stop:** when any configuration targets QA, report the message below and end the session. Do NOT write tests, stubs or production code, do NOT build, do NOT publish, do NOT run tests. This is not a decision: do NOT ask with `AskUserQuestion`, do NOT offer to "use the other configuration", do NOT edit, rename or remove the QA configuration yourself — and do NOT continue when the developer insists or says the environment is "not really QA". The developer fixes `launch.json` and re-runs `/iFacto.SDD`.
+>
+> 🛑 **QA environment in launch.json** — configuration `<name>` targets environment `<environmentName>`. iFacto.SDD never publishes to a QA environment. Remove the QA configuration from `.vscode/launch.json` (or move it out of this workspace), make sure the only sandbox configuration points at your development sandbox, and re-run `/iFacto.SDD`.
+
+The same check runs again immediately before **every** publish in the cycle (Steps 4, 5.5, 7, 8, 9): re-read `launch.json`, and on a QA configuration stop with the same report. A file changed mid-cycle is caught there.
 
 ### Step 1.6: Sandbox Preflight — Foreign DEV Extensions (MANDATORY gate — before any code is written)
 
@@ -248,6 +261,8 @@ Follow the `iFacto.al-build-validation` skill on **both** projects:
 2. Build and publish the **Test** project: `ms-dynamics-smb.al/al_build` → fix errors → rebuild until clean
 
 Both projects must compile **and** publish cleanly before any test run.
+
+> 🛑 **QA check before every publish** — re-read `.vscode/launch.json` before each `al_build`/publish in this step and in Steps 5.5, 7, 8 and 9. Any configuration that targets QA (Step 1.5, "NEVER publish to a QA environment") → hard stop with that report. Never publish first and check afterwards.
 
 > ⛔ **Hard stop:** A compile or publish error on either project is a **blocker** — it is NOT a RED state. Stop immediately, report the exact error(s) to the user, and wait for the issue to be resolved before proceeding to Step 5. When the developer chose in Step 1.6 to leave foreign DEV extensions installed and the publish fails on an object ID another extension owns, name that extension in the report.
 
@@ -415,11 +430,12 @@ These rules are enforced unconditionally:
    Do not write tests, do not write stubs, do not build. The `iFacto.bc-saas-test-runner` skill enforces the same rule and will refuse to run — checking up front avoids wasted work.
 7. **`al` CLI prerelease required** — `iFacto.bc-saas-test-runner` uses `al runtests` from `microsoft.dynamics.businesscentral.development.tools` (prerelease `18.x`+). If the tool is missing, stop and report the install command rather than falling back to another runner
 8. **No direct dependency calls in business logic tests** — every dependency must be replaced by a test double (Dummy/Stub/Spy/Throwing); calling real implementations that touch the database from a business logic test is forbidden
-9. **Session agent only, never a subagent** — SDD runs only in the developer's own session: loaded by the `/iFacto.SDD` command (Copilot prompt or Claude Code command), chosen in the Copilot agent picker, or started with `claude --agent iFacto.SDD`. It is never started with the Claude Code `Agent` tool or Copilot `agent/runSubagent` — not by the developer's own session and not by another agent (`iFacto.ALCoder`, `iFacto.SolutionDesigner`, `iFacto.CodeReviewer`). Publishing and test runs need the developer in the loop, and a subagent has no channel to them. Started as a subagent anyway: end the run with the ⛔ report from "Session Agent Only — Never a Subagent" and do nothing else. Step 1.5 is the entry gate: the cycle starts only when `.vscode/launch.json` holds a configuration with `"environmentType": "Sandbox"` — OnPrem, Production or a missing launch.json is a ⛔ hard stop
+9. **Session agent only, never a subagent** — SDD runs only in the developer's own session: loaded by the `/iFacto.SDD` command (Copilot prompt or Claude Code command), chosen in the Copilot agent picker, or started with `claude --agent iFacto.SDD`. It is never started with the Claude Code `Agent` tool or Copilot `agent/runSubagent` — not by the developer's own session and not by another agent (`iFacto.ALCoder`, `iFacto.SolutionDesigner`, `iFacto.CodeReviewer`). Publishing and test runs need the developer in the loop, and a subagent has no channel to them. Started as a subagent anyway: end the run with the ⛔ report from "Session Agent Only — Never a Subagent" and do nothing else. Step 1.5 is the entry gate: the cycle starts only when `.vscode/launch.json` holds a configuration with `"environmentType": "Sandbox"` — OnPrem, Production, a missing launch.json or **any QA configuration** is a ⛔ hard stop
 10. **Always publish before running tests** — `iFacto.bc-saas-test-runner` does NOT publish; it runs `al runtests` against whatever is currently deployed. Build and publish both App and Test projects to the sandbox immediately before every test run; without that, the sandbox may still run the previous version of the code and the results are unreliable
 11. **Download dependencies before building** — if a build reports unresolved symbols or missing packages, run `ms-dynamics-smb.al/al_downloadsymbols` for the App project and then the Test project before attempting `al_build`; never skip this step and assume the error is in your code
 12. **All object IDs come from AL Object ID Ninja** — every new object, field, and enum value in BOTH projects (production code, RED stubs, test codeunits, test doubles) gets its ID reserved via the `iFacto.object-id-assignment` skill; hand-picked, guessed, incremented, or `idRanges`-derived IDs are forbidden, and if the Ninja tool is unavailable, stop and report instead of falling back
 13. **No foreign DEV extension is removed without asking** — Step 1.6 lists the DEV extensions in the sandbox that do not belong to this workspace (`iFacto.sandbox-switch`); the developer decides every time whether they are uninstalled, and whether their data goes with them. A check that cannot run is a hard stop, not a reason to publish blind; only a sandbox in a delegated-admin customer tenant comes back `skipped` and continues
+14. **NEVER publish to a QA environment** — before the first publish (Step 1.5) and again before every publish, check **every** configuration in `.vscode/launch.json`; one whose `"environmentName"` or `"name"` contains `QA` in any casing is a 🛑 hard stop for the whole cycle, also when it is a `"Sandbox"`, also when another configuration points at a development sandbox, and also when the developer insists. Never ask, never pick the other configuration, never edit the QA entry yourself — report and end the session; the developer fixes `launch.json` and re-runs
 
 ## Security
 
