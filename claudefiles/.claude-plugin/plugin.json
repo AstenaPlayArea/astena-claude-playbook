@@ -1,0 +1,9 @@
+{
+  "name": "ifacto",
+  "displayName": "iFacto Playbook",
+  "description": "iFacto agents, slash commands and skills for Business Central (AL) development",
+  "author": {
+    "name": "iFacto Business Solutions"
+  },
+  "repository": "https://dev.azure.com/iFactoAcademy/iFacto%20Playbook/_git/BCCompanyGuidelines"
+}

@@ -1,0 +1,15 @@
+{
+  "name": "ifacto-playbook",
+  "description": "iFacto Playbook: the iFacto agents, slash commands and skills for Business Central development with Claude Code",
+  "owner": {
+    "name": "iFacto Business Solutions",
+    "url": "https://www.ifacto.be"
+  },
+  "plugins": [
+    {
+      "name": "ifacto",
+      "source": "./claudefiles",
+      "description": "iFacto agents (ALCoder, SolutionDesigner, CodeReviewer, SDD, ...), slash commands and skills from claudefiles/"
+    }
+  ]
+}
