@@ -10,11 +10,15 @@
 //        from the Azure CLI, or BC_ACCESS_TOKEN when that is set.
 //
 // Usage:  node dev-apps.mjs check     --project App --project Test
+//         node dev-apps.mjs compare   --project App --project Test --list <file>
 //         node dev-apps.mjs uninstall --project App --project Test --ids <appId>[,<appId>] [--delete-data]
 //
-// Prints one JSON document on stdout. Exit 0 = done (read "status": clean, foreign, skipped,
-// uninstalled), 1 = the sandbox could not be checked or an uninstall did not complete,
-// 2 = usage error.
+// compare is the manual route when there is no token: the developer copies the DEV extensions
+// from Extension Management ("Show and copy" — a JSON array with app ids) into <file>.
+//
+// Prints one JSON document on stdout. Exit 0 = done (read "status": clean, foreign,
+// uninstalled), 1 = the sandbox could not be checked ("no-token": check it by hand with
+// compare; "error") or an uninstall did not complete, 2 = usage error.
 
 import { readFileSync, existsSync } from 'node:fs';
 import { execSync } from 'node:child_process';
@@ -22,18 +26,20 @@ import { join, resolve, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const BC_RESOURCE = 'https://api.businesscentral.dynamics.com';
+const BC_WEB = 'https://businesscentral.dynamics.com';
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TENANT = /^[A-Za-z0-9.-]+$/;
 
 const USAGE = `Usage:
   node dev-apps.mjs check     --project <dir> [--project <dir>] [--launch <file>] [--company <name>]
+  node dev-apps.mjs compare   --project <dir> [--project <dir>] [--launch <file>] --list <file>
   node dev-apps.mjs uninstall --project <dir> [--project <dir>] --ids <appId>[,<appId>] [--delete-data]
 `;
 
 export class UsageError extends Error {}
 
-/** The developer has no account in the sandbox's tenant — they reach it as a delegated admin (GDAP). */
-export class TenantAccessError extends Error {}
+/** No Business Central token for the sandbox's tenant — the developer checks it by hand (compare). */
+export class TokenError extends Error {}
 
 export class ApiError extends Error {
     constructor(status, detail, request) {
@@ -46,10 +52,11 @@ export class ApiError extends Error {
 /* CLI                                                                   */
 /* ==================================================================== */
 
-const VALUE_OPTS = new Set(['project', 'launch', 'company', 'ids']);
+const VALUE_OPTS = new Set(['project', 'launch', 'company', 'ids', 'list']);
+const COMMANDS = ['check', 'compare', 'uninstall'];
 
 export function parseArgs(argv) {
-    const cfg = { command: null, projects: [], launch: null, company: null, ids: [], deleteData: false, help: false };
+    const cfg = { command: null, projects: [], launch: null, company: null, list: null, ids: [], deleteData: false, help: false };
 
     for (let i = 0; i < argv.length; i++) {
         const arg = argv[i];
@@ -72,14 +79,17 @@ export function parseArgs(argv) {
     }
 
     if (cfg.help) { return cfg; }
-    if (cfg.command !== 'check' && cfg.command !== 'uninstall') {
-        throw new UsageError('the command must be "check" or "uninstall"');
+    if (!COMMANDS.includes(cfg.command)) {
+        throw new UsageError('the command must be "check", "compare" or "uninstall"');
     }
     if (cfg.projects.length === 0) {
         throw new UsageError('pass every AL project of the workspace with --project (the App and the Test project)');
     }
-    if (cfg.command === 'check' && (cfg.ids.length > 0 || cfg.deleteData)) {
+    if (cfg.command !== 'uninstall' && (cfg.ids.length > 0 || cfg.deleteData)) {
         throw new UsageError('--ids and --delete-data belong to uninstall');
+    }
+    if ((cfg.command === 'compare') !== (cfg.list !== null)) {
+        throw new UsageError(cfg.list ? '--list belongs to compare' : 'compare needs --list <file> — the list pasted from Extension Management');
     }
     if (cfg.command === 'uninstall' && cfg.ids.length === 0) {
         throw new UsageError('uninstall needs --ids <appId>[,<appId>] — the ids from the foreign list of check');
@@ -217,6 +227,47 @@ export function classify(extensions, expected) {
 }
 
 /**
+ * The DEV extensions the developer copied from Extension Management with "Show and copy"
+ * (Develop in VS Code → Get selected as dependencies): a JSON array of {id, name, publisher,
+ * version}. Text around the array — a dialog caption — is ignored.
+ */
+export function parsePastedList(text) {
+    const start = text.indexOf('[');
+    const end = text.lastIndexOf(']');
+    if (start < 0 || end < start) {
+        throw new UsageError('the pasted list holds no JSON array — copy it with "Show and copy" in Extension Management (Develop in VS Code → Get selected as dependencies)');
+    }
+    let rows;
+    try {
+        rows = JSON.parse(text.slice(start, end + 1));
+    } catch (err) {
+        throw new UsageError(`the pasted list is not valid JSON (${err.message}) — copy the whole "Show and copy" dialog text`);
+    }
+    if (!Array.isArray(rows)) { throw new UsageError('the pasted list is not a JSON array'); }
+
+    const apps = rows.map((row) => ({
+        id: String(row?.id ?? '').replace(/[{}]/g, '').trim().toLowerCase(),
+        name: row?.name ?? null,
+        publisher: row?.publisher ?? null,
+        version: row?.version ?? null,
+    }));
+    const noId = apps.find((a) => !GUID.test(a.id));
+    if (noId) { throw new UsageError(`an entry of the pasted list has no app id: ${JSON.stringify(noId)}`); }
+    // Microsoft publishes no DEV extensions — a Microsoft app means the Published As = Dev filter was off.
+    const microsoft = apps.find((a) => String(a.publisher ?? '').trim().toLowerCase() === 'microsoft');
+    if (microsoft) {
+        throw new UsageError(`the pasted list holds Microsoft apps (${microsoft.name}) — filter Extension Management on Published As = Dev before selecting the rows`);
+    }
+    return apps;
+}
+
+/** Pasted DEV extensions this workspace does not publish or depend on. */
+export function classifyPasted(apps, expected) {
+    const expectedIds = new Set(expected.map((a) => a.id));
+    return { dev: apps, foreign: apps.filter((a) => !expectedIds.has(a.id)) };
+}
+
+/**
  * Uninstall every app in `targets`. The Automation API does not expose dependents, so an app
  * another target still depends on fails first; retry the failures until a round removes nothing.
  */
@@ -251,10 +302,15 @@ export function apiBase({ tenant, environmentName }) {
     return `${BC_RESOURCE}/v2.0/${segments.join('/')}/api/microsoft/automation/v2.0`;
 }
 
+/** Extension Management (page 2500) of the sandbox, filtered on DEV extensions — for the manual check. */
+export function extensionManagementUrl({ tenant, environmentName }) {
+    const segments = [tenant, environmentName].filter(Boolean).map(encodeURIComponent);
+    return `${BC_WEB}/${segments.join('/')}/?page=2500&filter=${encodeURIComponent("'Published As' IS 'Dev'")}`;
+}
+
 /** What unblocks a failed call, by status code. */
 export function hintFor(status, sandbox) {
-    const login = `az login${sandbox.tenant ? ` --tenant ${sandbox.tenant}` : ''}`;
-    if (status === 401) { return `the token was rejected — run \`${login}\` and retry`; }
+    if (status === 401) { return `the token was rejected — run \`${azLogin(sandbox.tenant)}\` with the account you publish with from VS Code, and retry`; }
     if (status === 403) {
         return `your user has no extension-management permission in "${sandbox.environmentName}" (permission set EXTEN. MGT. - ADMIN or SUPER)`;
     }
@@ -318,32 +374,62 @@ export function createClient({ base, token, fetchImpl = globalThis.fetch }) {
 /* Token                                                                 */
 /* ==================================================================== */
 
-/** The developer's own token: BC_ACCESS_TOKEN when set, otherwise the Azure CLI login. */
+export function azLogin(tenant) {
+    return `az login${tenant ? ` --tenant ${tenant} --allow-no-subscriptions` : ''}`;
+}
+
+const firstLine = (err) => String(err?.stderr || err?.message || '').trim().split('\n')[0];
+
+/**
+ * The developer's own token: BC_ACCESS_TOKEN when set, otherwise the Azure CLI.
+ *
+ * `get-access-token --tenant X` asks with the *active* az account — the iFacto account —
+ * and the tenant that holds the dev sandboxes refuses that one (AADSTS50020): the developer
+ * publishes there with another account. So every account az has signed in to that tenant
+ * is tried first, selected with --subscription (a tenant-level login has the tenant id as
+ * its subscription id), and the active account last.
+ */
 export function acquireToken(tenant, env = process.env, run = execSync) {
     if (env.BC_ACCESS_TOKEN?.trim()) { return env.BC_ACCESS_TOKEN.trim(); }
 
     // One command string, not an argument array: on Windows `az` is a .cmd that only starts
-    // through a shell. `tenant` is validated against TENANT before it gets here.
-    const command = `az account get-access-token --resource ${BC_RESOURCE}${tenant ? ` --tenant ${tenant}` : ''} --query accessToken -o tsv`;
-    const login = `az login${tenant ? ` --tenant ${tenant}` : ''}`;
-    let output;
-    try {
-        output = run(command, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    } catch (err) {
-        const stderr = String(err.stderr ?? err.message ?? '');
-        // A customer tenant reached through GDAP: VS Code publishes there with the AL extension's
-        // own app, but the Azure CLI gets no token — the account is neither member nor guest.
-        if (/AADSTS50020/.test(stderr)) {
-            throw new TenantAccessError(`the Azure CLI gets no token in tenant ${tenant ?? '(default)'}: your account is neither member nor guest there (AADSTS50020) — you reach this sandbox as a delegated admin`);
+    // through a shell. `tenant` is validated against TENANT, account ids against GUID.
+    const az = (args) => String(run(`az ${args}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    const fix = `sign in once with the account you publish with from VS Code: \`${azLogin(tenant)}\`, then retry`;
+    const fail = (detail) => {
+        const missing = /not recognized|not found|ENOENT/i.test(detail);
+        return new TokenError(missing
+            ? `the Azure CLI (az) is not installed — install it (\`winget install Microsoft.AzureCLI\`), ${fix}`
+            : `no Business Central token from the Azure CLI for tenant ${tenant ?? '(default)'} — ${fix} (${detail})`);
+    };
+
+    const attempts = [];
+    if (tenant) {
+        let accounts;
+        try { accounts = JSON.parse(az('account list --all -o json')); } catch (err) { throw fail(firstLine(err)); }
+        const wanted = tenant.toLowerCase();
+        const users = new Set();
+        for (const account of Array.isArray(accounts) ? accounts : []) {
+            const inTenant = [account?.tenantId, account?.tenantDefaultDomain].some((v) => String(v ?? '').toLowerCase() === wanted);
+            const user = String(account?.user?.name ?? '').toLowerCase();
+            if (!inTenant || !GUID.test(String(account.id)) || users.has(user)) { continue; }
+            users.add(user);
+            attempts.push({ who: account.user?.name ?? account.id, args: ` --subscription ${account.id}` });
         }
-        if (/not recognized|not found|ENOENT/i.test(stderr)) {
-            throw new Error('the Azure CLI (az) is not installed — install it (`winget install Microsoft.AzureCLI`), run `' + login + '`, and retry');
-        }
-        throw new Error(`could not get a Business Central token from the Azure CLI — run \`${login}\` and retry (${stderr.trim().split('\n')[0]})`);
     }
-    const token = String(output).trim();
-    if (!token) { throw new Error(`the Azure CLI returned no token — run \`${login}\` and retry`); }
-    return token;
+    attempts.push({ who: 'the active az account', args: tenant ? ` --tenant ${tenant}` : '' });
+
+    const failures = [];
+    for (const { who, args } of attempts) {
+        try {
+            const token = az(`account get-access-token --resource ${BC_RESOURCE}${args} --query accessToken -o tsv`).trim();
+            if (token) { return token; }
+            failures.push(`${who}: no token returned`);
+        } catch (err) {
+            failures.push(`${who}: ${firstLine(err)}`);
+        }
+    }
+    throw fail(failures.join('; '));
 }
 
 /* ==================================================================== */
@@ -357,7 +443,7 @@ async function connect(cfg, deps) {
     try {
         token = deps.token ?? acquireToken(sandbox.tenant, deps.env, deps.run);
     } catch (err) {
-        err.sandbox = sandbox;
+        Object.assign(err, { sandbox, expected });
         throw err;
     }
     const client = createClient({ base: apiBase(sandbox), token, fetchImpl: deps.fetchImpl });
@@ -380,15 +466,7 @@ function environmentOf({ sandbox, company }) {
 }
 
 export async function runCheck(cfg, deps = {}) {
-    let ctx;
-    try {
-        ctx = await connect(cfg, deps);
-    } catch (err) {
-        // Not a failed check: a customer's own tenant holds no other customer's partner-sandbox
-        // leftovers, and the developer cannot get an Azure CLI token there at all.
-        if (!(err instanceof TenantAccessError)) { throw err; }
-        return { code: 0, report: { status: 'skipped', reason: err.message, environment: err.sandbox } };
-    }
+    const ctx = await connect(cfg, deps);
     let extensions;
     try { extensions = await ctx.client.extensions(ctx.company.id); } catch (err) { throw withHint(err, ctx.sandbox); }
     const { dev, foreign } = classify(extensions, ctx.expected);
@@ -401,6 +479,36 @@ export async function runCheck(cfg, deps = {}) {
             devInstalled: dev,
             foreign,
         },
+    };
+}
+
+/** The manual route: compare what the developer copied from Extension Management. No API, no token. */
+export function runCompare(cfg) {
+    const sandbox = loadSandbox(cfg.projects, cfg.launch);
+    const expected = expectedApps(cfg.projects);
+    if (!existsSync(cfg.list)) { throw new UsageError(`no file ${cfg.list} — save the pasted list there first`); }
+    const { dev, foreign } = classifyPasted(parsePastedList(readFileSync(cfg.list, 'utf8')), expected);
+    return {
+        code: 0,
+        report: {
+            status: foreign.length === 0 ? 'clean' : 'foreign',
+            source: 'pasted',
+            environment: sandbox,
+            expected,
+            devListed: dev,
+            foreign,
+        },
+    };
+}
+
+/** No token: the check is not skipped — the developer reads Extension Management and runs compare. */
+function noTokenReport(err) {
+    return {
+        status: 'no-token',
+        error: err.message,
+        environment: err.sandbox,
+        extensionManagement: extensionManagementUrl(err.sandbox),
+        expected: err.expected,
     };
 }
 
@@ -454,12 +562,14 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
     }
     if (cfg.help) { write(USAGE); return 0; }
 
+    const commands = { check: runCheck, compare: runCompare, uninstall: runUninstall };
     try {
-        const { code, report } = cfg.command === 'check' ? await runCheck(cfg, deps) : await runUninstall(cfg, deps);
+        const { code, report } = await commands[cfg.command](cfg, deps);
         print(report);
         return code;
     } catch (err) {
         if (err instanceof UsageError) { print({ status: 'usage', error: err.message, usage: USAGE }); return 2; }
+        if (err instanceof TokenError) { print(noTokenReport(err)); return 1; }
         print({ status: 'error', error: err.message });
         return 1;
     }

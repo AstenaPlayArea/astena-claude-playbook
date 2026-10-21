@@ -55,7 +55,7 @@ Every phase of the cycle publishes both projects to the sandbox and runs tests t
 
 ## Workflow
 
-⛔ **Required toolset** (always-on Required Toolset Gate — run it at Step 1A, right after the start time is recorded): the AL tooling (`al_build`, `al_downloadsymbols`, `al_symbolsearch`, `al_getdiagnostics`), `mcp-server-atlassian-jira` (when a JIRA issue is referenced), `microsoft-learn-mcp`, `al-object-id-ninja`, `bc-code-atlas`, the BCQuality knowledge base on disk (`iFacto.company-guidelines`), the sandbox from `.vscode/launch.json` (its own hard stop), and the Azure CLI (`az`) logged in to that sandbox's tenant (`iFacto.sandbox-switch`, Step 1.6 — the check is its own probe). Any of them missing or unreachable → stop, report what unblocks it, write no test and no code.
+⛔ **Required toolset** (always-on Required Toolset Gate — run it at Step 1A, right after the start time is recorded): the AL tooling (`al_build`, `al_downloadsymbols`, `al_symbolsearch`, `al_getdiagnostics`), `mcp-server-atlassian-jira` (when a JIRA issue is referenced), `microsoft-learn-mcp`, `al-object-id-ninja`, `bc-code-atlas`, the BCQuality knowledge base on disk (`iFacto.company-guidelines`), and the sandbox from `.vscode/launch.json` (its own hard stop). The Azure CLI (`az`) signed in to that sandbox's tenant makes Step 1.6 automatic; without it Step 1.6 is done by hand (`iFacto.sandbox-switch`, Step 1b) — never skipped. Any of the others missing or unreachable → stop, report what unblocks it, write no test and no code.
 
 ### Step -1: Record Start Time (MANDATORY FIRST STEP)
 
@@ -133,16 +133,16 @@ The same check runs again immediately before **every** publish in the cycle (Ste
 
 ### Step 1.6: Sandbox Preflight — Foreign DEV Extensions (MANDATORY gate — before any code is written)
 
-A partner sandbox moves from customer to customer, and the previous customer's DEV extensions stay installed. Check it once per cycle, now — before the first publish, while the developer is still at the keyboard.
+A developer's sandbox moves from customer to customer, and the previous customer's DEV extensions stay installed. Check it once per cycle, now — before the first publish, while the developer is still at the keyboard. **Always**: in every tenant, also a customer's.
 
 Follow the `iFacto.sandbox-switch` skill with both projects (App and Test). It compares the DEV extensions installed in the launch.json sandbox with the app ids of this workspace and the dependencies in their `app.json`:
 
 | Skill result | Action |
 |---|---|
 | `clean` | Say so in one line, then Step 2 |
-| `skipped` | The sandbox is in a customer tenant you reach as a delegated admin — no other customer's leftovers can be there. Say so in one line, then Step 2 |
+| `no-token` | No token for the sandbox's tenant — **not** a pass. Say why in one line (`error`, with the one-time `az login`), then check by hand as the skill prescribes (Step 1b: the developer copies the DEV extensions from Extension Management, `compare` reads them). Its `clean` / `foreign` counts exactly like the automatic one. Never search token caches or reuse another tool's token |
 | `foreign` | Ask with `AskUserQuestion` exactly as the skill prescribes — uninstall and keep data (Recommended) / uninstall and delete data / leave them. **Always ask**, also when the answer looks obvious: never uninstall on your own. Uninstall only what the developer agreed to, then Step 2 |
-| The check fails | ⛔ Hard stop — report the error and what unblocks it (`az login --tenant <tenant>`, the Azure CLI install, extension-management permission in the sandbox). Write no test and no code |
+| The check fails (`error`) | ⛔ Hard stop — report the error and what unblocks it (the `az login` in it, extension-management permission in the sandbox). Write no test and no code |
 
 Later publishes in this cycle (Steps 4, 5.5, 7, 8, 9) do not repeat the check.
 
@@ -434,7 +434,7 @@ These rules are enforced unconditionally:
 10. **Always publish before running tests** — `iFacto.bc-saas-test-runner` does NOT publish; it runs `al runtests` against whatever is currently deployed. Build and publish both App and Test projects to the sandbox immediately before every test run; without that, the sandbox may still run the previous version of the code and the results are unreliable
 11. **Download dependencies before building** — if a build reports unresolved symbols or missing packages, run `ms-dynamics-smb.al/al_downloadsymbols` for the App project and then the Test project before attempting `al_build`; never skip this step and assume the error is in your code
 12. **All object IDs come from AL Object ID Ninja** — every new object, field, and enum value in BOTH projects (production code, RED stubs, test codeunits, test doubles) gets its ID reserved via the `iFacto.object-id-assignment` skill; hand-picked, guessed, incremented, or `idRanges`-derived IDs are forbidden, and if the Ninja tool is unavailable, stop and report instead of falling back
-13. **No foreign DEV extension is removed without asking** — Step 1.6 lists the DEV extensions in the sandbox that do not belong to this workspace (`iFacto.sandbox-switch`); the developer decides every time whether they are uninstalled, and whether their data goes with them. A check that cannot run is a hard stop, not a reason to publish blind; only a sandbox in a delegated-admin customer tenant comes back `skipped` and continues
+13. **No foreign DEV extension is removed without asking** — Step 1.6 lists the DEV extensions in the sandbox that do not belong to this workspace (`iFacto.sandbox-switch`); the developer decides every time whether they are uninstalled, and whether their data goes with them. Every sandbox is checked before the first publish, in every tenant: without a token the developer checks by hand (`no-token` → Step 1b of the skill), and a check that fails is a hard stop — never a reason to publish blind
 14. **NEVER publish to a QA environment** — before the first publish (Step 1.5) and again before every publish, check **every** configuration in `.vscode/launch.json`; one whose `"environmentName"` or `"name"` contains `QA` in any casing is a 🛑 hard stop for the whole cycle, also when it is a `"Sandbox"`, also when another configuration points at a development sandbox, and also when the developer insists. Never ask, never pick the other configuration, never edit the QA entry yourself — report and end the session; the developer fixes `launch.json` and re-runs
 
 ## Security
