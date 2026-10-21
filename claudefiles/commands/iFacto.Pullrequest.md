@@ -37,22 +37,32 @@ The developer must personally confirm that the change was **functionally tested 
 ### 4.2 Ask — after showing the Jira acceptance criteria (Step 1) and the changed objects (Step 3)
 Ask these three questions and wait for the answers:
 1. *"Have you functionally tested this change in your own environment, and do you vouch that it was actually tested? (yes/no) — recorded in the name of **{name}**."*
-2. *"In which environment?"* (e.g. sandbox name, Docker container, OnPrem test DB)
+2. *"In which environment, and what is its URL?"* (e.g. sandbox name, Docker container, OnPrem test DB). Propose the URL from `.vscode/launch.json` when a configuration matches the environment, and let the developer confirm or correct it — see 4.3.
 3. *"What did you test?"* (one line, the scenarios you ran)
 
-### 4.3 Rules
+### 4.3 Environment URL — derive or ask, never invent
+The URL lets the reviewer and the Jira reporter open the environment the change was tested in.
+- **SaaS** (`"environmentType": "Sandbox"`): `https://businesscentral.dynamics.com/{tenant}/{environmentName}` — leave out `{tenant}` when the configuration has none; URL-encode the environment name (a space becomes `%20`).
+- **Docker / OnPrem** (`"server"` + `"serverInstance"`): `{server}/{serverInstance}/` (e.g. `http://bcserver/BC/`).
+- No matching configuration (the developer tested somewhere else): ask the developer for the URL.
+- Never guess a tenant, host or environment name. The developer has no URL to give (e.g. a local container only they can reach) → record `not available` with the reason they give.
+
+### 4.4 Rules
 - **Only an explicit "yes" to question 1, asked at this gate, counts.** An earlier remark such as *"create the PR, it's tested"* is not an attestation — still ask.
 - **NEVER answer on the developer's behalf** and never pre-fill "yes". A passing test run or build is not an attestation either.
 - **"No", "partially", "not yet", or an evasive answer → STOP.** Generate no PR description and create no PR. Tell the developer to test first and re-run `/iFacto.Pullrequest`.
 - Questions 2 and 3 need a concrete answer — "yes" or "everything" is not one. Ask again once; still vague → STOP.
 - **Running as a subagent** (no channel to the developer): end the run and report to the caller that the attestation is required. Never assume it.
 
-### 4.4 Attestation text (fixed wording — reuse verbatim in Step 5 and Step 7)
+### 4.5 Attestation text (fixed wording — reuse verbatim in Step 5 and Step 7)
 Use the developer's name, today's date (`YYYY-MM-DD`) and their answers. Do not refer to the developer as he or she; the wording below uses the name only:
 
 > ✅ **Functional test confirmed** — On {date}, {name} confirmed that this change was functionally tested in their own environment.
 > - Environment: {environment}
+> - Environment URL: {url}
 > - Tested: {scope}
+
+`{url}` is the confirmed URL from 4.3 as a clickable link — markdown `[{url}]({url})` in the PR description, an ADF link mark in Jira — or `not available ({reason})`.
 
 The attestation is always in **English**, like the rest of the PR. If the developer answers questions 2 or 3 in another language, translate the answer to English without adding, dropping or softening anything, and show the translated text to the developer before using it.
 
@@ -112,7 +122,7 @@ If `az rest` fails for ANY other reason (encoding error, network, unexpected res
 ## Step 7: Update JIRA Issue
 If JIRA was validated:
 1. Add a comment with PR link + description (excluding Deployment and Assessment sections).
-2. Add the Step 4 attestation text as a **separate comment** with the PR link, so it stands on its own in the issue history.
+2. Add the Step 4 attestation text as a **separate comment** with the PR link, so it stands on its own in the issue history. It carries the environment URL; keep it a working link after the ADF conversion.
 - Convert markdown to Atlassian Document Format (ADF)
 - If the description comment fails: log the error but don't fail PR creation
 - If the **attestation comment** fails: the PR stays, but report the failure explicitly to the developer and hand over the attestation text to paste into Jira manually — never just log it
