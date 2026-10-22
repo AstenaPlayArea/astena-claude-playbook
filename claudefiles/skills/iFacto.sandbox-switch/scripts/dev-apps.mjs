@@ -10,18 +10,22 @@
 //        from the Azure CLI, or BC_ACCESS_TOKEN when that is set.
 //
 // Usage:  node dev-apps.mjs check     --project App --project Test
+//         node dev-apps.mjs login     --project App --project Test
 //         node dev-apps.mjs compare   --project App --project Test --list <file>
 //         node dev-apps.mjs uninstall --project App --project Test --ids <appId>[,<appId>] [--delete-data]
 //
-// compare is the manual route when there is no token: the developer copies the DEV extensions
-// from Extension Management ("Show and copy" — a JSON array with app ids) into <file>.
+// login is what follows a "no-token": a device-code sign-in to the sandbox's tenant, after
+// which the default az account goes back to what it was. compare is the manual route when
+// there is still no token: the developer copies the DEV extensions from Extension Management
+// ("Show and copy" — a JSON array with app ids) into <file>.
 //
-// Prints one JSON document on stdout. Exit 0 = done (read "status": clean, foreign,
-// uninstalled), 1 = the sandbox could not be checked ("no-token": check it by hand with
-// compare; "error") or an uninstall did not complete, 2 = usage error.
+// Prints one JSON document on stdout; login prints one JSON object per line (the device code
+// while az waits, then the result). Exit 0 = done (read "status": clean, foreign, signed-in,
+// uninstalled), 1 = the sandbox could not be checked ("no-token": sign in with login, or check
+// it by hand with compare; "error") or an uninstall did not complete, 2 = usage error.
 
 import { readFileSync, existsSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import { join, resolve, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -32,14 +36,23 @@ const TENANT = /^[A-Za-z0-9.-]+$/;
 
 const USAGE = `Usage:
   node dev-apps.mjs check     --project <dir> [--project <dir>] [--launch <file>] [--company <name>]
+  node dev-apps.mjs login     --project <dir> [--project <dir>] [--launch <file>]
   node dev-apps.mjs compare   --project <dir> [--project <dir>] [--launch <file>] --list <file>
   node dev-apps.mjs uninstall --project <dir> [--project <dir>] --ids <appId>[,<appId>] [--delete-data]
 `;
 
 export class UsageError extends Error {}
 
-/** No Business Central token for the sandbox's tenant — the developer checks it by hand (compare). */
-export class TokenError extends Error {}
+/**
+ * No Business Central token for the sandbox's tenant. `signIn`: login can still get one (az is
+ * installed and no sign-in was tried yet); otherwise the developer checks it by hand (compare).
+ */
+export class TokenError extends Error {
+    constructor(message, { signIn = true } = {}) {
+        super(message);
+        this.signIn = signIn;
+    }
+}
 
 export class ApiError extends Error {
     constructor(status, detail, request) {
@@ -53,7 +66,7 @@ export class ApiError extends Error {
 /* ==================================================================== */
 
 const VALUE_OPTS = new Set(['project', 'launch', 'company', 'ids', 'list']);
-const COMMANDS = ['check', 'compare', 'uninstall'];
+const COMMANDS = ['check', 'login', 'compare', 'uninstall'];
 
 export function parseArgs(argv) {
     const cfg = { command: null, projects: [], launch: null, company: null, list: null, ids: [], deleteData: false, help: false };
@@ -80,7 +93,7 @@ export function parseArgs(argv) {
 
     if (cfg.help) { return cfg; }
     if (!COMMANDS.includes(cfg.command)) {
-        throw new UsageError('the command must be "check", "compare" or "uninstall"');
+        throw new UsageError('the command must be "check", "login", "compare" or "uninstall"');
     }
     if (cfg.projects.length === 0) {
         throw new UsageError('pass every AL project of the workspace with --project (the App and the Test project)');
@@ -378,7 +391,33 @@ export function azLogin(tenant) {
     return `az login${tenant ? ` --tenant ${tenant} --allow-no-subscriptions` : ''}`;
 }
 
+/** What login runs: a device-code sign-in works from an agent's shell, where az cannot open a browser. */
+export function azDeviceLogin(tenant) {
+    return `az login --use-device-code --allow-no-subscriptions${tenant ? ` --tenant ${tenant}` : ''} -o json`;
+}
+
 const firstLine = (err) => String(err?.stderr || err?.message || '').trim().split('\n')[0];
+const azMissing = (detail) => /not recognized|not found|ENOENT/i.test(detail);
+const INSTALL_AZ = 'the Azure CLI (az) is not installed — install it (`winget install Microsoft.AzureCLI`)';
+
+// One command string, not an argument array: on Windows `az` is a .cmd that only starts
+// through a shell. `tenant` is validated against TENANT, account ids against GUID.
+const azWith = (run) => (args) => String(run(`az ${args}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+
+/** The az logins in `tenant`, one per user. A tenant-level login has the tenant id as its subscription id. */
+function accountsIn(accounts, tenant) {
+    const wanted = tenant.toLowerCase();
+    const users = new Set();
+    const found = [];
+    for (const account of Array.isArray(accounts) ? accounts : []) {
+        const inTenant = [account?.tenantId, account?.tenantDefaultDomain].some((v) => String(v ?? '').toLowerCase() === wanted);
+        const user = String(account?.user?.name ?? '').toLowerCase();
+        if (!inTenant || !GUID.test(String(account.id)) || users.has(user)) { continue; }
+        users.add(user);
+        found.push({ id: account.id, user: account.user?.name ?? null });
+    }
+    return found;
+}
 
 /**
  * The developer's own token: BC_ACCESS_TOKEN when set, otherwise the Azure CLI.
@@ -386,36 +425,25 @@ const firstLine = (err) => String(err?.stderr || err?.message || '').trim().spli
  * `get-access-token --tenant X` asks with the *active* az account — the iFacto account —
  * and the tenant that holds the dev sandboxes refuses that one (AADSTS50020): the developer
  * publishes there with another account. So every account az has signed in to that tenant
- * is tried first, selected with --subscription (a tenant-level login has the tenant id as
- * its subscription id), and the active account last.
+ * is tried first, selected with --subscription, and the active account last.
  */
 export function acquireToken(tenant, env = process.env, run = execSync) {
     if (env.BC_ACCESS_TOKEN?.trim()) { return env.BC_ACCESS_TOKEN.trim(); }
 
-    // One command string, not an argument array: on Windows `az` is a .cmd that only starts
-    // through a shell. `tenant` is validated against TENANT, account ids against GUID.
-    const az = (args) => String(run(`az ${args}`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
-    const fix = `sign in once with the account you publish with from VS Code: \`${azLogin(tenant)}\`, then retry`;
+    const az = azWith(run);
+    const fix = `sign in with the account you publish with from VS Code — \`dev-apps.mjs login\` starts a device-code sign-in; in a terminal: \`${azLogin(tenant)}\` — then retry`;
     const fail = (detail) => {
-        const missing = /not recognized|not found|ENOENT/i.test(detail);
+        const missing = azMissing(detail);
         return new TokenError(missing
-            ? `the Azure CLI (az) is not installed — install it (\`winget install Microsoft.AzureCLI\`), ${fix}`
-            : `no Business Central token from the Azure CLI for tenant ${tenant ?? '(default)'} — ${fix} (${detail})`);
+            ? `${INSTALL_AZ}, then ${fix}`
+            : `no Business Central token from the Azure CLI for tenant ${tenant ?? '(default)'} — ${fix} (${detail})`, { signIn: !missing });
     };
 
     const attempts = [];
     if (tenant) {
         let accounts;
         try { accounts = JSON.parse(az('account list --all -o json')); } catch (err) { throw fail(firstLine(err)); }
-        const wanted = tenant.toLowerCase();
-        const users = new Set();
-        for (const account of Array.isArray(accounts) ? accounts : []) {
-            const inTenant = [account?.tenantId, account?.tenantDefaultDomain].some((v) => String(v ?? '').toLowerCase() === wanted);
-            const user = String(account?.user?.name ?? '').toLowerCase();
-            if (!inTenant || !GUID.test(String(account.id)) || users.has(user)) { continue; }
-            users.add(user);
-            attempts.push({ who: account.user?.name ?? account.id, args: ` --subscription ${account.id}` });
-        }
+        for (const { id, user } of accountsIn(accounts, tenant)) { attempts.push({ who: user ?? id, args: ` --subscription ${id}` }); }
     }
     attempts.push({ who: 'the active az account', args: tenant ? ` --tenant ${tenant}` : '' });
 
@@ -432,6 +460,68 @@ export function acquireToken(tenant, env = process.env, run = execSync) {
     throw fail(failures.join('; '));
 }
 
+/* ==================================================================== */
+/* Sign-in                                                               */
+/* ==================================================================== */
+
+/**
+ * The prompt az prints on stderr for a device-code sign-in: "To sign in, use a web browser to
+ * open the page <url> and enter the code <code> to authenticate." Entra words it, so `message`
+ * carries it whole; `code` is null when the wording does not match.
+ */
+export function parseDevicePrompt(line) {
+    const message = String(line).replace(/\x1b\[[0-9;]*m/g, '').replace(/^WARNING:\s*/, '').trim();
+    const url = /https:\/\/[^\s"']+/.exec(message)?.[0].replace(/[.,;:)]+$/, '');
+    if (!url || !/\bcode\b/i.test(message)) { return null; }
+    return { url, code: /\b[Cc]ode\s+([A-Z0-9]{6,})\b/.exec(message)?.[1] ?? null, message };
+}
+
+/** Run az and hand every stderr line to `onLine` as it comes: the device code is needed while az waits. */
+function streamAz(command, onLine, spawnImpl = spawn) {
+    return new Promise((done) => {
+        const child = spawnImpl(command, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
+        const lines = [];
+        let stdout = '';
+        let rest = '';
+        const take = (chunk, final = false) => {
+            rest += chunk;
+            const parts = rest.split(/\r?\n/);
+            rest = final ? '' : parts.pop();
+            for (const part of parts.filter((p) => p.trim())) { lines.push(part); onLine(part); }
+        };
+        child.stdout.on('data', (data) => { stdout += data; });
+        child.stderr.on('data', (data) => take(String(data)));
+        child.on('error', (err) => done({ code: -1, stdout, stderr: [...lines, err.message] }));
+        child.on('close', (code) => { take('', true); done({ code, stdout, stderr: lines }); });
+    });
+}
+
+/**
+ * `az login` makes the new login the default az account, and Azure DevOps calls run as the
+ * default — `az rest` creates the PR in /iFacto.Pullrequest. Put back the one from before.
+ */
+function restoreDefault(before, az) {
+    if (!before) { return null; }
+    const account = { user: before.user?.name ?? null, subscription: before.name ?? before.id };
+    const fix = `az account set --subscription ${before.id}`;
+    const isBefore = (now) => now?.id === before.id && now?.user?.name === before.user?.name;
+    try {
+        if (isBefore(JSON.parse(az('account show -o json')))) { return { ...account, status: 'kept' }; }
+        if (!GUID.test(String(before.id))) { throw new Error(`not a subscription id: ${before.id}`); }
+        az(`account set --subscription ${before.id}`);
+        if (isBefore(JSON.parse(az('account show -o json')))) { return { ...account, status: 'restored' }; }
+        return { ...account, status: 'not-restored', error: `${account.user} is still not the default az account`, fix };
+    } catch (err) {
+        return { ...account, status: 'not-restored', error: firstLine(err), fix };
+    }
+}
+
+function signedInAs(stdout, tenant) {
+    let logins;
+    try { logins = JSON.parse(stdout); } catch { return null; }
+    const inTenant = tenant ? accountsIn(logins, tenant) : [];
+    return (inTenant[0]?.user ?? (Array.isArray(logins) ? logins[0]?.user?.name : null)) ?? null;
+}
 /* ==================================================================== */
 /* Commands                                                              */
 /* ==================================================================== */
@@ -501,14 +591,68 @@ export function runCompare(cfg) {
     };
 }
 
-/** No token: the check is not skipped — the developer reads Extension Management and runs compare. */
+/**
+ * No token: sign in with a device code. The developer opens the url and enters the code; this
+ * waits until they have (az gives up after about 15 minutes), puts the default az account
+ * back, and fetches the token the way check does. A failed sign-in ends in no-token without
+ * `signIn`: the next step is the manual check, not another code.
+ */
+export async function runLogin(cfg, deps = {}) {
+    const sandbox = loadSandbox(cfg.projects, cfg.launch);
+    const expected = expectedApps(cfg.projects);
+    const az = azWith(deps.run ?? execSync);
+    const emit = deps.emit ?? (() => {});
+    const noToken = (message, extra = {}) => Object.assign(new TokenError(message, { signIn: false }), { sandbox, expected, ...extra });
+
+    let before = null;
+    try {
+        before = JSON.parse(az('account show -o json'));
+    } catch (err) {
+        if (azMissing(firstLine(err))) { throw noToken(INSTALL_AZ); }
+        // Not signed in anywhere yet: there is no default to put back.
+    }
+    let known = [];
+    if (sandbox.tenant) {
+        try { known = accountsIn(JSON.parse(az('account list --all -o json')), sandbox.tenant); } catch { /* only used for the hint */ }
+    }
+    const account = known.map((a) => a.user).filter(Boolean).join(' or ') || null;
+
+    let promptLine = null;
+    const login = await streamAz(azDeviceLogin(sandbox.tenant), (line) => {
+        const prompt = promptLine ? null : parseDevicePrompt(line);
+        if (!prompt) { return; }
+        promptLine = line;
+        emit({ status: 'device-code', ...prompt, account, environment: sandbox });
+    }, deps.spawn);
+
+    // Also after a failed sign-in: az may have switched the default before it gave up.
+    const defaultAccount = restoreDefault(before, az);
+    if (login.code !== 0) {
+        const detail = login.stderr.filter((line) => line !== promptLine).at(-1)?.trim() ?? `az exited with ${login.code}`;
+        throw noToken(`the sign-in did not complete (${detail})`, { defaultAccount });
+    }
+    try {
+        acquireToken(sandbox.tenant, deps.env, deps.run);
+    } catch (err) {
+        if (err instanceof TokenError) { throw Object.assign(err, { signIn: false, sandbox, expected, defaultAccount }); }
+        throw err;
+    }
+    return {
+        code: 0,
+        report: { status: 'signed-in', environment: sandbox, signedInAs: signedInAs(login.stdout, sandbox.tenant), defaultAccount },
+    };
+}
+
+/** No token: the check is not skipped — login first when it can help, else Extension Management and compare. */
 function noTokenReport(err) {
     return {
         status: 'no-token',
         error: err.message,
+        signIn: err.signIn,
         environment: err.sandbox,
         extensionManagement: extensionManagementUrl(err.sandbox),
         expected: err.expected,
+        ...(err.defaultAccount ? { defaultAccount: err.defaultAccount } : {}),
     };
 }
 
@@ -551,7 +695,9 @@ export async function runUninstall(cfg, deps = {}) {
 
 export async function main(argv = process.argv.slice(2), deps = {}) {
     const write = deps.write ?? ((text) => process.stdout.write(text));
-    const print = (doc) => write(`${JSON.stringify(doc, null, 2)}\n`);
+    // login prints one object per line: the device code while az waits, then the result.
+    let perLine = false;
+    const print = (doc) => write(`${perLine ? JSON.stringify(doc) : JSON.stringify(doc, null, 2)}\n`);
 
     let cfg;
     try {
@@ -561,10 +707,11 @@ export async function main(argv = process.argv.slice(2), deps = {}) {
         return 2;
     }
     if (cfg.help) { write(USAGE); return 0; }
+    perLine = cfg.command === 'login';
 
-    const commands = { check: runCheck, compare: runCompare, uninstall: runUninstall };
+    const commands = { check: runCheck, login: runLogin, compare: runCompare, uninstall: runUninstall };
     try {
-        const { code, report } = await commands[cfg.command](cfg, deps);
+        const { code, report } = await commands[cfg.command](cfg, { ...deps, emit: print });
         print(report);
         return code;
     } catch (err) {

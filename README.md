@@ -5,7 +5,7 @@ Microsoft Dynamics 365 Business Central (AL) development.
 
 **Generated — do not edit, pull requests are not accepted.** This repository is a published copy
 of iFacto's internal playbook repository and is overwritten on every release.
-Source commit: `84ba09d273c2c05d171378dfb1522de43be6c4c5`.
+Source commit: `ae43f8e5dbe1cd408f3ad75e5a4fa327f437d7f7`.
 
 ## Install
 

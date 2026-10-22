@@ -11,8 +11,9 @@ test app are still there, and overlapping object IDs make the publish fail. This
 those leftovers and removes them — **only after the developer has said yes**.
 
 **Always check.** Every sandbox is checked before the first publish to it — automatically
-when there is a token, by hand (Step 1b) when there is none. A sandbox that could not be read
-is never skipped and never assumed clean, whatever tenant it is in.
+when there is a token, after a device-code sign-in (Step 1a) when there is none, by hand
+(Step 1b) when that sign-in does not get one either. A sandbox that could not be read is never
+skipped and never assumed clean, whatever tenant it is in.
 
 This first slice handles DEV extensions only. PTEs and Global apps (AppSource) are read but
 never reported and never touched.
@@ -35,7 +36,7 @@ overrides), gets a token for the launch.json `tenant`, and prints one JSON docum
 |---|---|---|
 | 0, `clean` | Every installed DEV extension is a workspace app or one of its dependencies | Say so in one line and continue |
 | 0, `foreign` | `foreign[]` lists DEV extensions that belong to something else | Step 2 |
-| 1, `no-token` | No Business Central token for the sandbox's tenant. `error` says why and how to make the automatic check work next time | Pass `error` on in one line, then Step 1b |
+| 1, `no-token` | No Business Central token for the sandbox's tenant; `error` says why | `signIn: true` → Step 1a, at once. `signIn: false` (no Azure CLI) → pass `error` on in one line, then Step 1b |
 | 1, `error` | The sandbox could not be checked: 401/403, environment not found | ⛔ Step 4 |
 | 2, `usage` | Wrong `--project`, no app.json, no Sandbox configuration | Fix the call; if launch.json itself is wrong, ⛔ Step 4 |
 
@@ -43,9 +44,46 @@ The comparison is on app **id** — never on name, publisher or count. A library
 alongside is a dependency in `app.json` and is not foreign, and every iFacto app carries the
 same publisher.
 
-### 1b. Check by hand — when there is no token
+### 1a. Sign in — at once, when there is no token
 
-The developer reads the list in Business Central; the script still compares on app id.
+`signIn: true` means az is installed but has no usable login for the sandbox's tenant. Do not
+ask whether to sign in, and do not send the developer to a terminal for `az login`: start the
+sign-in yourself, right away.
+
+```bash
+node ~/.claude/skills/iFacto.sandbox-switch/scripts/dev-apps.mjs login --project <App folder> --project <Test folder>
+```
+
+`login` runs a device-code sign-in (`az login --use-device-code`) to the launch.json tenant and
+waits until the developer has signed in. az gives up after about 15 minutes. Start it in the
+background (Claude Code: Bash with `run_in_background: true`). It prints one JSON object per
+line:
+
+1. **`device-code`**, within seconds. Read it from the background task's output (if it is not
+   there yet, wait for it with Monitor and an until-loop). Hand it over in one short message:
+   open `url`, enter `code`, sign in with `account`. When `account` is null, the developer signs
+   in with the account they publish with from VS Code, which for the Oxygen Group NV tenant is
+   not their iFacto account. The code is valid for about 15 minutes. When `code` is null, pass
+   `message` on verbatim. Then wait: you are notified when the command ends. Do not poll, and
+   do not start a second sign-in.
+2. **The last line**, when the command ends:
+
+| Exit, `status` | Do |
+|---|---|
+| 0, `signed-in` | Run Step 1 `check` again. It now gets a token |
+| 1, `no-token` (`signIn: false`) | The sign-in did not complete: the code expired, the developer declined, or the account has no access. Pass `error` on in one line, then Step 1b. Start another sign-in only when the developer asks for a new code |
+
+**The default az account.** `az login` makes the new login the default az account, and Azure
+DevOps calls run as the default: the PR that `/iFacto.Pullrequest` creates with `az rest`, and
+pipelines and reviews too. `login` therefore puts back the account that was the default
+before, and `defaultAccount.status` reports `kept` or `restored`. On `not-restored`, tell the
+developer in one line that DevOps calls run as the wrong account until they run
+`defaultAccount.fix`. Never leave that message out.
+
+### 1b. Check by hand — when there is still no token
+
+Only when Step 1a did not get a token, or there is no Azure CLI. The developer reads the list in
+Business Central; the script still compares on app id.
 
 1. Give the developer the `extensionManagement` link from the report — Extension Management of
    that sandbox, filtered on **Published As = Dev** — and these steps:
@@ -71,8 +109,9 @@ The developer reads the list in Business Central; the script still compares on a
 
 **Never look for another way to a token.** Do not search token caches, credential stores or
 the settings of VS Code, the AL extension, the AL CLI or any other tool, and do not reuse a
-token another tool holds. The developer's own `az` login — or a `BC_ACCESS_TOKEN` the
-developer set — is the only automatic route; everything else is Step 1b.
+token another tool holds. The automatic routes are the developer's own `az` login (the one
+`login` starts, or one they made themselves) and a `BC_ACCESS_TOKEN` the developer set.
+Everything else is Step 1b.
 
 ### 2. Ask — always
 
@@ -102,10 +141,10 @@ target depends on goes after its dependent — and lists the sandbox again to co
 | Exit, `status` | Do |
 |---|---|
 | 0, `uninstalled` | Report what was removed in one line and continue |
-| 1, `no-token` | Step 3b |
+| 1, `no-token` | Step 1a, then run uninstall again. Still no token → Step 3b |
 | 1, `partial` / `error` | Report `failed[]` and `stillInstalled[]` with their errors, then stop. The developer removes them in Extension Management or decides to keep them. Never retry with `--delete-data` on your own |
 
-### 3b. Uninstall by hand — when there is no token
+### 3b. Uninstall by hand — when there is still no token
 
 Tell the developer which apps to uninstall (name, app id) and how: in Extension Management,
 select the app → **Uninstall**, test apps and other dependents first. For "delete data", run
@@ -126,17 +165,19 @@ The token is the developer's own, from the Azure CLI. The dev sandboxes live in 
 (Oxygen Group NV) where developers publish with **another account than their iFacto account**
 — the iFacto account is refused there (`AADSTS50020`). The script therefore asks az for a
 token with every account that is signed in to the launch.json tenant (`--subscription <that
-login>`), and with the active account only after those. Making that work is a one-time step
-per developer and tenant:
+login>`), and with the active account only after those. When there is no such login, or it has
+expired, the result is `no-token` and `login` signs in with a device code (Step 1a). That
+login holds until it expires. A developer can do the same in a terminal:
 
 ```bash
 az login --tenant <tenant from launch.json> --allow-no-subscriptions
 ```
 
-signed in with the account they publish with from VS Code. `az login` can switch the default
-subscription; `az account show` shows it and `az account set --subscription <name>` puts it
-back. `BC_ACCESS_TOKEN` in the environment overrides the Azure CLI. No app registration and no
-admin role — the Automation API acts with the rights the developer already has in the sandbox.
+signed in with the account they publish with from VS Code. That switches the default az
+account, which Azure DevOps calls use; `az account set --subscription <name>` puts it back.
+`login` does that by itself. `BC_ACCESS_TOKEN` in the environment overrides the Azure CLI. No
+app registration and no admin role — the Automation API acts with the rights the developer
+already has in the sandbox.
 
 The Admin Center API is deliberately not used: it needs the Entra role *Dynamics 365 Business
 Central Administrator*, which applies to every environment in the tenant, production included.
