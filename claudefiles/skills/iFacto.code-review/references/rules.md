@@ -109,7 +109,7 @@ pageextension 50103 "Customer Card Ext" extends "Customer Card"
 ```
 
 ## clean-field-tooltip-on-table-field
-_category: clean · severity: should-fix · confidence: 3 · scope: global · origin: iFacto company standard (BCQuality custom/knowledge/ui/ifacto-table-field-tooltip-is-canonical-description.md) / waldo / 2026-09-08_
+_category: clean · severity: should-fix · confidence: 7 · scope: global · origin: iFacto company standard (BCQuality custom/knowledge/ui/ifacto-table-field-tooltip-is-canonical-description.md) / waldo / 2026-09-08_
 
 ### Rule
 A field's `ToolTip` is declared once on the table or tableextension field and says more than the caption; page controls, report and query columns declare no tooltip of their own.
@@ -183,7 +183,7 @@ if IsGUI then Report.RunModal(…) else Report.Run(…, false, false, RecVar); j
 ```
 
 ## clean-no-modify-after-insert
-_category: clean · severity: nit · confidence: 1 · scope: global · origin: a customer PR / harvested / 2026-09-08_
+_category: clean · severity: nit · confidence: 2 · scope: global · origin: a customer PR / harvested / 2026-09-08_
 
 ### Rule
 Do not call `Modify()` on a record right after `Insert()`; set all fields before the insert.
@@ -381,7 +381,7 @@ codeunit 50126 "Mail Queue Processor"
 ```
 
 ## clean-tests-for-business-logic
-_category: clean · severity: should-fix · confidence: 2 · scope: global · origin: a customer PR, a customer PR / harvested / 2026-09-08_
+_category: clean · severity: should-fix · confidence: 5 · scope: global · origin: a customer PR, a customer PR / harvested / 2026-09-08_
 
 ### Rule
 A PR that adds or changes business logic includes test codeunits covering that logic.
@@ -399,6 +399,31 @@ New codeunit with an import/processing routine; Test/ folder untouched.
 ```al
 // Good
 Test codeunit in Test/ exercising the new routine (happy path + the error path the code guards).
+```
+
+## dependencies-application-test-library
+_category: dependencies · severity: should-fix · confidence: 0 · scope: global · origin: Aerts commit ceafc3ff / gunter / 2026-10-19_
+
+### Rule
+A test app depends on Microsoft's `Application Test Library` (d852d5d2-a39d-4179-baeb-f99a19e32510), never on `Tests-TestLibraries` or on the separate libraries it replaces (`Library Assert`, `Any`, `Library Variable Storage`, `System Application Test Library`).
+
+### Rationale
+The Application Test Library bundles Microsoft's test libraries into one dependency. Five separate entries in `app.json` must each be resolved, version-aligned and kept up to date; one entry cannot drift out of step. iFacto test apps converge on the single dependency (Aerts, 2026-10-19).
+
+**Detect:** an `app.json` whose `dependencies` contains `"name": "Tests-TestLibraries"` (id 5d86850b-0d76-4eca-bd7b-951ad998e997), or one of `Library Assert` (dd0be2ea-f733-4d65-bb34-a28f4624fb14), `Any` (e7320ebb-08b3-4406-b1ec-b4927d3e280b), `Library Variable Storage` (5095f467-0a01-4b99-99d1-9ff1237d286f), `System Application Test Library` (9856ae4f-d1a7-46ef-89bb-6ef056398228), when the diff adds or changes that entry.
+**Never a finding:** `Test Runner` (23de40a6-dfe8-4f80-80db-d70f83ce8caf), which stays a separate dependency; an `app.json` the diff does not touch; a production app (`App/`) that has none of these dependencies.
+
+### Good / Bad
+```json
+// Bad
+{ "id": "5d86850b-0d76-4eca-bd7b-951ad998e997", "publisher": "Microsoft", "name": "Tests-TestLibraries", "version": "25.2.0.0" },
+{ "id": "dd0be2ea-f733-4d65-bb34-a28f4624fb14", "publisher": "Microsoft", "name": "Library Assert", "version": "25.2.0.0" },
+{ "id": "e7320ebb-08b3-4406-b1ec-b4927d3e280b", "publisher": "Microsoft", "name": "Any", "version": "25.2.0.0" }
+```
+```json
+// Good
+{ "id": "d852d5d2-a39d-4179-baeb-f99a19e32510", "publisher": "Microsoft", "name": "Application Test Library", "version": "25.2.0.0" },
+{ "id": "23de40a6-dfe8-4f80-80db-d70f83ce8caf", "publisher": "Microsoft", "name": "Test Runner", "version": "25.2.0.0" }
 ```
 
 ## deps-app-json-dependency-needs-nuget-json
@@ -472,7 +497,7 @@ Modified: UpdateAppSourceApps.yml    (Distri Belgium GUID under appsource_offeri
 ```
 
 ## design-api-columns-are-a-contract
-_category: design · severity: blocking · confidence: 1 · scope: global · origin: a customer PR / harvested / 2026-09-08_
+_category: design · severity: blocking · confidence: 2 · scope: global · origin: a customer PR / harvested / 2026-09-08_
 
 ### Rule
 Columns of API pages and queries are never removed or renamed; an obsolete column keeps its name and returns a default.
@@ -577,7 +602,7 @@ Procedure on the table (or a Meth codeunit) with `var TempSalesLine: Record "Sal
 ```
 
 ## design-meth-called-only-from-table
-_category: design · severity: should-fix · confidence: 4 · scope: global · origin: iFacto company standard (BCQuality custom/knowledge/style/ifacto-meth-codeunit-table-only-caller.md) / waldo / 2026-09-08_
+_category: design · severity: should-fix · confidence: 8 · scope: global · origin: iFacto company standard (BCQuality custom/knowledge/style/ifacto-meth-codeunit-table-only-caller.md) / waldo / 2026-09-08_
 
 ### Rule
 A Meth codeunit is declared and invoked only from the public procedure of its own source table; pages, reports and other codeunits call the table procedure.
@@ -630,7 +655,7 @@ page 50124 "Customer Score Card"
 ```
 
 ## design-meth-single-public-procedure
-_category: design · severity: should-fix · confidence: 1 · scope: global · origin: iFacto company standard (BCQuality custom/knowledge/style/ifacto-meth-codeunit-single-public-procedure.md) / waldo / 2026-09-08_
+_category: design · severity: should-fix · confidence: 3 · scope: global · origin: iFacto company standard (BCQuality custom/knowledge/style/ifacto-meth-codeunit-single-public-procedure.md) / waldo / 2026-09-08_
 
 ### Rule
 A Meth codeunit exposes exactly one public procedure, wrapped in `OnBefore`/`OnAfter` integration events with an `IsHandled` guard; every helper is `local`.
@@ -683,7 +708,7 @@ codeunit 50122 "Customer CalculateScore Meth"
 ```
 
 ## design-meth-takes-data-as-parameters
-_category: design · severity: should-fix · confidence: 5 · scope: global · origin: iFacto company standard (BCQuality custom/knowledge/testing/ifacto-meth-takes-data-as-parameter-not-lookup.md) / waldo / 2026-09-08_
+_category: design · severity: should-fix · confidence: 14 · scope: global · origin: iFacto company standard (BCQuality custom/knowledge/testing/ifacto-meth-takes-data-as-parameter-not-lookup.md) / waldo / 2026-09-08_
 
 ### Rule
 A Meth procedure receives every record and value it needs as parameters; it does not `Get` its setup, `SetRange`/`FindSet` its own lines or `CalcFields` inside the unit.
@@ -805,7 +830,7 @@ Line No. is renumbered and reused; SystemId is stable and the enum makes the ref
 ```
 
 ## design-standard-controls-before-control-addin
-_category: design · severity: nit · confidence: 1 · scope: global · origin: iFactoApps a customer PR / harvested / 2026-09-08_
+_category: design · severity: nit · confidence: 2 · scope: global · origin: iFactoApps a customer PR / harvested / 2026-09-08_
 
 ### Rule
 Use a standard page control (Blob/Media field in a group) before building a control add-in.
@@ -824,7 +849,7 @@ page 2036712 "RHE Report Footer Image": field("Footer Image"; Rec."Footer Image"
 ```
 
 ## design-table-logic-in-meth-codeunit
-_category: design · severity: should-fix · confidence: 2 · scope: global · origin: iFacto company standard (BCQuality custom/knowledge/style/ifacto-meth-codeunit-business-logic.md) / waldo / 2026-09-08_
+_category: design · severity: should-fix · confidence: 3 · scope: global · origin: iFacto company standard (BCQuality custom/knowledge/style/ifacto-meth-codeunit-business-logic.md) / waldo / 2026-09-08_
 
 ### Rule
 Table triggers and table procedures contain no business logic; they delegate to a `<Table Name> <Purpose> Meth` codeunit.
@@ -974,7 +999,7 @@ Clear(SalesLine); SalesLine.ReadIsolation := IsolationLevel::ReadUncommitted; Sa
 ```
 
 ## perf-setloadfields-on-every-read
-_category: performance · severity: should-fix · confidence: 5 · scope: global · origin: a customer PR / harvested / 2026-09-08_
+_category: performance · severity: should-fix · confidence: 6 · scope: global · origin: a customer PR / harvested / 2026-09-08_
 
 ### Rule
 Every read operation on a record (`Get`, `Find`, `FindFirst`, `FindLast`, `FindSet`, `Next` loops) is preceded by `SetLoadFields` naming the fields the code actually uses.
@@ -995,7 +1020,7 @@ SalesHeader.SetLoadFields("Salesperson Code", "Shortcut Dimension 1 Code", "Sell
 ```
 
 ## perm-admin-and-user-pair
-_category: permissions · severity: should-fix · confidence: 0 · scope: global · origin: iFacto company standard (BCQuality custom/knowledge/security/ifacto-permissionset-admin-and-user-pair.md) / waldo / 2026-09-08_
+_category: permissions · severity: should-fix · confidence: 1 · scope: global · origin: iFacto company standard (BCQuality custom/knowledge/security/ifacto-permissionset-admin-and-user-pair.md) / waldo / 2026-09-08_
 
 ### Rule
 An extension ships exactly two assignable permission sets, Admin and User, listing the same tables: Admin grants RIMD everywhere, User grants R on setup tables and RIMD on the rest.

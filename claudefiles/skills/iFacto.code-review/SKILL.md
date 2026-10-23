@@ -68,6 +68,24 @@ Never review more than one target per invocation and never look at other PRs.
    changes have their own exception).
 4. Diff for the review: `git diff <merge-base>...HEAD -- <file>` per production `.al` file,
    plus the working-tree diffs. Deleted files: name them; renamed files: the new path.
+5. **Build gate.** The PR pipeline fails on any compiler error **or warning**, so a devlead never
+   looks at a change that does not build clean - and neither does this review. Build every AL
+   project with a changed `.al` or `app.json` (the folder holding `app.json`: `App/`, and `Test/`
+   when test AL changed) with the AL MCP: `al_build`, then `al_getdiagnostics`. When it answers
+   *No projects are loaded*, `al_addproject` that folder first. Count errors and warnings over
+   the **whole project**, not only the changed files - the pipeline does. Info and hints do not
+   count.
+   - **Any error or warning stops the review.** Report the context line, a `## Build` section
+     with every error and warning as `<code> - <path>:<line> - <message>`, and recommendation
+     `fix` ("build not clean: <e> errors, <w> warnings - fix them, then re-run the review").
+     No rulebook, no findings: they come after the build is clean.
+   - Zero errors and zero warnings: continue, and put `build clean (0 errors, 0 warnings)` in the
+     context line.
+   - The build cannot run (AL MCP missing, symbols missing, compiler crash): stop and report why
+     under `## Not fetched / problems`. An unknown build is not a clean build.
+   - Silencing a warning (`#pragma warning disable`, a ruleset entry, a lowered severity) does not
+     fix it. A suppression the diff adds is a finding (`opinion`, `should-fix`) unless the line
+     carries a comment saying why the warning does not apply.
 
 ### pr
 
@@ -270,10 +288,12 @@ findings.
   diff header alone.
 - **Every finding carries a rule id that exists in `references/rulebook.md`, or the word `opinion`.**
 - **Exceptions are cited, never silently applied. Retired rules are ignored.**
-- **A red validation build stops a pr-mode review.**
+- **A red validation build stops a pr-mode review. A local build with any error or warning
+  stops a local-mode review.** Warnings are fixed first, never reviewed around.
 - **A requirement gap is reported as a gap, never invented**: quote or paraphrase the asked
   item. When the comment thread narrowed the scope, the narrowed scope is the requirement.
-- **Analyzer territory is not reviewed.** CI does that.
+- **Analyzer territory is not reviewed as findings.** Analyzer warnings are caught by the build
+  gate, which stops the review until they are fixed.
 - **`references/` is never edited.** Disagreement with a rule goes to your devlead, who judges
   it on a real PR in CodeReview Nexus; that is the only place the rulebook learns.
 

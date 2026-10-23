@@ -1,10 +1,10 @@
 {
   "source": "CodeReview Nexus",
   "repo": "CodeReviewBrain",
-  "nexusCommit": "bd994f6",
-  "exportedAt": "2026-10-14T08:57:07+00:00",
-  "rules": 42,
-  "exceptions": 10,
+  "nexusCommit": "ddf4b51",
+  "exportedAt": "2026-10-23T12:54:29+00:00",
+  "rules": 43,
+  "exceptions": 11,
   "skipped": {
     "rules": [],
     "exceptions": []
@@ -20,6 +20,7 @@
     "clean-pte-suffix-on-tableextension-members",
     "clean-single-object-per-file",
     "clean-tests-for-business-logic",
+    "dependencies-application-test-library",
     "deps-app-json-dependency-needs-nuget-json",
     "deps-nuget-json-offerings-only",
     "deps-nuget-offerings-in-updateappsourceapps",
@@ -58,6 +59,7 @@
     "exc-clean-tests-for-business-logic-install-codeunits",
     "exc-clean-tests-for-business-logic-rhe-caption-codeunits",
     "exc-deps-nuget-json-offerings-only-third-party-apps",
+    "exc-design-reference-lines-by-systemid-transient-scan-buffer",
     "exc-design-table-logic-validation-on-table-is-allowed",
     "exc-no-finding-for-analyzer-required-overflow-guards",
     "exc-no-finding-for-dataclassification-on-obsoleted-fields",

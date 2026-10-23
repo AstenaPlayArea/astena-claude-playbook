@@ -1,4 +1,4 @@
-# iFacto review rulebook — 42 active rules, 11 exceptions
+# iFacto review rulebook — 43 active rules, 12 exceptions
 _Generated from CodeReview Nexus by `scripts/export-guidelines.py` (Nexus commit in `MANIFEST.json`). Never edit; a rule changes only in the Nexus._
 
 **How to use this.** Read this file once. It is the complete active rulebook in short form,
@@ -17,12 +17,12 @@ marked `pipeline: off` is not checked there, `pipeline: error` fails the PR buil
 - **`clean-al-file-naming-crs`** · ℹ️ nit · conf 0
   - AL files are named `<ObjectNameShort>.<ObjectTypeShortPascalCase>.al`; the object id is not part of the file name.
   - _Detect:_ `Table 50100 Customer Extension.al` and `Codeunit 50190 Customer Management Tests.al` — the retired iFacto format; the ID and the spaces are the signal. Also `CustomerExtension.al` (missing the type segment), `customer_extension.al` (snake_case), `50100.al` (ID only), and `CustomerCard.PageExtension.al` (`Extension` spelled out instead of `Ext`).
-- **`clean-field-tooltip-on-table-field`** · ⚠️ should-fix · conf 3
+- **`clean-field-tooltip-on-table-field`** · ⚠️ should-fix · conf 7
   - A field's `ToolTip` is declared once on the table or tableextension field and says more than the caption; page controls, report and query columns declare no tooltip of their own.
   - _Detect:_ A table field with no `ToolTip`; a tooltip that only restates the caption (`field("Return Date"; Date) { ToolTip = 'Specifies the return date.'; }`) — it tells an agent nothing it could not read from the field name; the same text duplicated on both the table field and the page control, which silently drifts because the page value wins; and tooltips declared only on page controls, leaving every other page that shows the field undocumented and the metadata empty. See sample: `ifacto-table-field-tooltip-is-canonical-description.bad.al`.
 - **`clean-honour-isgui-parameter`** · ⚠️ should-fix · conf 1
   - A procedure that receives an IsGUI/GuiAllowed flag shows no request page, dialog or confirm when the flag is false.
-- **`clean-no-modify-after-insert`** · ℹ️ nit · conf 1
+- **`clean-no-modify-after-insert`** · ℹ️ nit · conf 2
   - Do not call `Modify()` on a record right after `Insert()`; set all fields before the insert.
 - **`clean-no-ps1-test-scripts-in-app`** · ⚠️ should-fix · conf 0
   - A PowerShell test script (`.ps1`) lives under `Test/`, never under `App/`.
@@ -36,11 +36,14 @@ marked `pipeline: off` is not checked there, `pipeline: error` fails the PR buil
 - **`clean-single-object-per-file`** · ⚠️ should-fix · conf 0
   - Each `.al` file declares exactly one AL object or object extension.
   - _Detect:_ Two or more object declarations in one `.al` file — typically a table followed by its processor codeunit, or an enum bundled with the object that uses it. Also commented-out remnants of a second object left behind after a split.
-- **`clean-tests-for-business-logic`** · ⚠️ should-fix · conf 2
+- **`clean-tests-for-business-logic`** · ⚠️ should-fix · conf 5
   - A PR that adds or changes business logic includes test codeunits covering that logic.
   - _Detect:_ a codeunit in the PR gains or changes business logic - a procedure that calculates, validates, processes data or implements a business rule - and no test codeunit is added or changed in the same PR. A test codeunit is recognised by `Subtype = Test`, by `[Test]` procedures, or by "Test"/"Tests" in its name. Only codeunits count: changes to tables, pages, reports, xmlports, queries and enums, cosmetic changes (comments, formatting, whitespace), simple getters and setters, and renames without logic changes need no test. A codeunit covered by an exemption (upgrade, install, name patterns - see the exceptions bound to this rule) never produces a finding, not even one that explains the exemption: it is treated exactly like a clean file.
 ## dependencies
 
+- **`dependencies-application-test-library`** · ⚠️ should-fix · conf 0
+  - A test app depends on Microsoft's `Application Test Library` (d852d5d2-a39d-4179-baeb-f99a19e32510), never on `Tests-TestLibraries` or on the separate libraries it replaces (`Library Assert`, `Any`, `Library Variable Storage`, `System Application Test Library`).
+  - _Detect:_ an `app.json` whose `dependencies` contains `"name": "Tests-TestLibraries"` (id 5d86850b-0d76-4eca-bd7b-951ad998e997), or one of `Library Assert` (dd0be2ea-f733-4d65-bb34-a28f4624fb14), `Any` (e7320ebb-08b3-4406-b1ec-b4927d3e280b), `Library Variable Storage` (5095f467-0a01-4b99-99d1-9ff1237d286f), `System Application Test Library` (9856ae4f-d1a7-46ef-89bb-6ef056398228), when the diff adds or changes that entry. **Never a finding:** `Test Runner` (23de40a6-dfe8-4f80-80db-d70f83ce8caf), which stays a separate dependency; an `app.json` the diff does not touch; a production app (`App/`) that has none of these dependencies.
 - **`deps-app-json-dependency-needs-nuget-json`** · ⚠️ should-fix · conf 0
   - A dependency added to or changed in `app.json` is resolvable from `nuget.json` in the same PR: the Offering that contains it is listed there, or, for a third-party app, its package is added.
   - _Detect:_ the PR adds or changes an entry in the `dependencies` array of `app.json` and `nuget.json` is not changed in the same PR, while no Offering already listed in `nuget.json` contains that app. When the Offering contents cannot be verified from the PR alone (the CI review sees only the diff), report the unchanged `nuget.json` as a question - "is this app covered by a listed Offering?" - not as a certainty.
@@ -51,7 +54,7 @@ marked `pipeline: off` is not checked there, `pipeline: error` fails the PR buil
   - _Detect:_ only when the repository contains an `UpdateAppSourceApps.yml`; otherwise the rule does not apply at all. The PR adds or changes an Offering entry in any file matching `nuget*.json` (`nuget.json`, `nugetW1.json`, `nugetBE.json`, ...) and, in the same PR, `UpdateAppSourceApps.yml` does not gain the Offering under `appsource_offerings`, or the `-TEST` type is missing from the nuget file, or `NugetTypeFilterToOverrideWithBCVersion` lacks the type. When `UpdateAppSourceApps.yml` is not part of the fetched context, report the check as unresolved, never as a finding.
 ## design
 
-- **`design-api-columns-are-a-contract`** · 🛑 blocking · conf 1
+- **`design-api-columns-are-a-contract`** · 🛑 blocking · conf 2
   - Columns of API pages and queries are never removed or renamed; an obsolete column keeps its name and returns a default.
 - **`design-extensible-enum-implements-interface`** · ⚠️ should-fix · conf 1
   - An enum that models behaviour is `Extensible = true` and implements an interface; callers dispatch through the interface, never through `case`/`if` on the enum value.
@@ -62,13 +65,13 @@ marked `pipeline: off` is not checked there, `pipeline: error` fails the PR buil
   - _Detect:_ first read `app.json` of the app the PR belongs to; stop here if it has no `Distri...` dependency from `iFacto Business Solutions NV`. Otherwise: the PR adds a stored field to `Sales Header`, `Sales Line`, `Purchase Header` or `Purchase Line` (table or tableextension) and the same PR does not add the same field (same number, type, length, name) to the matching HIS table or its extension. A FlowField or FlowFilter on the document table needs no counterpart.
 - **`design-logic-in-table-or-codeunit-not-report`** · ⚠️ should-fix · conf 2
   - Business logic lives in table or codeunit procedures that take the working data as `var` parameters; report and report-extension triggers only call them.
-- **`design-meth-called-only-from-table`** · ⚠️ should-fix · conf 4
+- **`design-meth-called-only-from-table`** · ⚠️ should-fix · conf 8
   - A Meth codeunit is declared and invoked only from the public procedure of its own source table; pages, reports and other codeunits call the table procedure.
   - _Detect:_ A variable of a `... Meth` codeunit type declared in any object other than the Meth codeunit's own source table — most commonly a page action or another codeunit calling the Meth entry point directly.
-- **`design-meth-single-public-procedure`** · ⚠️ should-fix · conf 1
+- **`design-meth-single-public-procedure`** · ⚠️ should-fix · conf 3
   - A Meth codeunit exposes exactly one public procedure, wrapped in `OnBefore`/`OnAfter` integration events with an `IsHandled` guard; every helper is `local`.
   - _Detect:_ A Meth codeunit with two or more non-local procedures, or with helper procedures left public by omitting the `local` keyword. Also missing `OnBefore`/`OnAfter` events on the entry point, which blocks per-customer extensibility.
-- **`design-meth-takes-data-as-parameters`** · ⚠️ should-fix · conf 5
+- **`design-meth-takes-data-as-parameters`** · ⚠️ should-fix · conf 14
   - A Meth procedure receives every record and value it needs as parameters; it does not `Get` its setup, `SetRange`/`FindSet` its own lines or `CalcFields` inside the unit.
   - _Detect:_ A `… Meth` procedure whose signature carries only keys and flags (`ShipmentNo: Code[20]`, `Post: Boolean`) and whose body opens with record retrieval. Detection signals: `<Setup>.Get()` as the first statement of a Meth procedure; `SetRange` plus `FindSet` over a persisted table inside the unit under test; `CalcFields` on a record the procedure fetched itself.
 - **`design-no-namespace`** · 🛑 blocking · conf 0
@@ -78,9 +81,9 @@ marked `pipeline: off` is not checked there, `pipeline: error` fails the PR buil
   - Values needed later in a posting flow are carried on the document (extra fields on Sales Header transferred in CU 80 subscribers), not in a SingleInstance cache codeunit.
 - **`design-reference-lines-by-systemid`** · ℹ️ nit · conf 1
   - A record that references a line of another table stores the line's SystemId plus a type enum, not the Line No.
-- **`design-standard-controls-before-control-addin`** · ℹ️ nit · conf 1
+- **`design-standard-controls-before-control-addin`** · ℹ️ nit · conf 2
   - Use a standard page control (Blob/Media field in a group) before building a control add-in.
-- **`design-table-logic-in-meth-codeunit`** · ⚠️ should-fix · conf 2
+- **`design-table-logic-in-meth-codeunit`** · ⚠️ should-fix · conf 3
   - Table triggers and table procedures contain no business logic; they delegate to a `<Table Name> <Purpose> Meth` codeunit.
   - _Detect:_ Business logic written directly in a table trigger (`OnInsert`, `OnModify`, `OnDelete`, `OnValidate`) or in the body of a table procedure — record lookups, calculations, validations inline in the table object. The logic is untestable in isolation, offers no extensibility events, and mixes data structure with behaviour.
 - **`design-upgrade-codeunit-for-install-data`** · ⚠️ should-fix · conf 1
@@ -95,11 +98,11 @@ marked `pipeline: off` is not checked there, `pipeline: error` fails the PR buil
   - Records already collected in a temporary table are processed from that buffer (Integer dataitem or FindSet on the temp record), never re-read from the database.
 - **`perf-readisolation-on-processing-reads`** · ⚠️ should-fix · conf 4
   - Record reads in batch or processing methods set `ReadIsolation` explicitly (ReadUncommitted for non-critical reads, ReadCommitted where consistency matters).
-- **`perf-setloadfields-on-every-read`** · ⚠️ should-fix · conf 5
+- **`perf-setloadfields-on-every-read`** · ⚠️ should-fix · conf 6
   - Every read operation on a record (`Get`, `Find`, `FindFirst`, `FindLast`, `FindSet`, `Next` loops) is preceded by `SetLoadFields` naming the fields the code actually uses.
 ## permissions
 
-- **`perm-admin-and-user-pair`** · ⚠️ should-fix · conf 0
+- **`perm-admin-and-user-pair`** · ⚠️ should-fix · conf 1
   - An extension ships exactly two assignable permission sets, Admin and User, listing the same tables: Admin grants RIMD everywhere, User grants R on setup tables and RIMD on the rest.
   - _Detect:_ Shipping one permission set for everyone; granting `RIMD` on setup tables in the User set; granting only `R` (or omitting the table entirely) on transactional tables in the User set, so normal work fails with a permission error; adding a third or fourth set (viewer, read-only, per-module role) — the standard is exactly two; or letting the two sets drift so a table added later appears in Admin only. See sample: `ifacto-permissionset-admin-and-user-pair.bad.al`.
 - **`perm-admin-included-in-d365-full-access`** · ⚠️ should-fix · conf 0
@@ -190,6 +193,18 @@ customer repo must add it or the "Update AppSource Apps" pipeline breaks.
 ## Applies when
 The entry's id belongs to a third-party publisher (not `iFactoBusinessSolutionsNV.*`) and it
 sits in that vendor's feed block. The rule still fires for an individual iFacto app.
+
+## exc-design-reference-lines-by-systemid-transient-scan-buffer
+_rule: design-reference-lines-by-systemid · scope: object:Table 50011 "SN Scan Line PTE"_
+
+## Looks like
+A scan-buffer row stores "Sales Line No." (Integer) to point at the sales line it will register a serial on.
+
+## Accepted because
+The scan line is a short-lived worksheet row for one open sales order: it is applied as item tracking and deleted when the counter user closes the scan page. It is not a persisted cross-document reference.
+
+## Applies when
+The referencing record is Table 50011 "SN Scan Line PTE" (per-order scan buffer, consumed on apply). Not for comments, logs, history or links that outlive the document.
 
 ## exc-design-table-logic-validation-on-table-is-allowed
 _rule: design-table-logic-in-meth-codeunit · scope: global_

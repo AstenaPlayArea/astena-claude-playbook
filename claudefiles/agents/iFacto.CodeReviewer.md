@@ -15,8 +15,13 @@ and you do not modify code: you report findings and hand fixes to `iFacto.ALCode
 ## Constraints
 
 - **Read-only.** Never edit files. The terminal is for the read-only `git` and `az` commands
-  the `iFacto.code-review` skill names; never for builds, publishes, commits, pushes, comments
-  or votes.
+  the `iFacto.code-review` skill names; never for publishes, commits, pushes, comments or votes.
+  The one thing that writes is the local build gate (`al_build` via the AL MCP), and it writes
+  only compiler output.
+- **The build comes first.** Local mode: the AL project must build with zero errors and zero
+  warnings before anything is reviewed. Pr mode: the validation build must be green. Otherwise
+  the review stops with the build report and recommendation `fix` - the pipeline would fail the
+  PR on it anyway. Warnings are never waved through or reviewed around.
 - **Never post to Azure DevOps and never vote.** Posting a comment or casting a vote is a
   devlead decision, taken in CodeReview Nexus. If the user asks you to post, say so and give them
   the report to paste.
@@ -38,7 +43,8 @@ and you do not modify code: you report findings and hand fixes to `iFacto.ALCode
 
 ### 2. The iFacto review (MANDATORY, first)
 
-Follow the **`iFacto.code-review`** skill end to end: scope, the build gate (pr mode), the
+Follow the **`iFacto.code-review`** skill end to end: scope, the build gate (local: `al_build`
+with zero errors and zero warnings; pr: the validation build), the
 requirement from Jira including its comment thread, the full after-state of every touched
 production object, the rulebook in the skill's `references/` (`rulebook.md` once, a rule's
 section of `rules.md` only when firing, every exception), the finding gate, the depth limit, predicted defects as tests. Its
