@@ -45,7 +45,16 @@ Show the developer the full report, then:
 
 ## Step 5: Functional Test Attestation (MANDATORY GATE)
 
-The developer must personally confirm that the change was **functionally tested in their own environment** and vouch for it. Automated tests and a clean build do not replace this. **No attestation → no PR.**
+The developer must personally confirm that the change was **functionally tested in their own environment** and vouch for it. Automated tests and a clean build do not replace this. **No attestation → no PR** — in a repository with an AL app (5.0).
+
+### 5.0 Only for a repository with an AL app
+The attestation is about running the change in Business Central. It applies whenever the repository holds an AL app: an `app.json` anywhere in it — tracked (`git ls-files "*app.json"`, `App/` and `Test/` in the usual layout), not yet added, or in a submodule.
+- **An AL app exists** → the attestation is mandatory: 5.1 to 5.5, with or without a `.vscode/launch.json`. launch.json only proposes the environment URL (5.3); without a matching configuration the developer gives it.
+- **No AL app** (no `app.json` anywhere in the repository) → there is nothing to run in Business Central — BCCompanyGuidelines, for instance, holds the skills themselves, not customer customisations. Skip 5.1 to 5.5 and ask nothing. `## Testing` starts with this line instead of the attestation, and Step 8 posts no attestation comment:
+
+> ℹ️ **Functional test attestation: not applicable** — this repository holds no AL app (no `app.json`).
+
+- **Read the repository, never take the developer's word for it.** "No need to ask" in a repository with an `app.json` does not skip the questions, and neither does a missing or moved launch.json.
 
 ### 5.1 Resolve the developer's name — never guess it
 1. Jira: `mcp-server-atlassian-jira/jira_get` → `/rest/api/3/myself` → `displayName`
@@ -96,14 +105,14 @@ The attestation is always in **English**, like the rest of the PR. If the develo
 # [Emoticon] [JIRA-ISSUE]: [Title]
 ## Summary
 ## Changes
-## Testing  ← starts with the Step 5 attestation text
+## Testing  ← starts with the Step 5 attestation text (or the 5.0 not-applicable line)
 ## Deployment
 ## Assessment (star ratings as list)
 ---
 Commit info
 ```
 
-The attestation text from Step 5 is the **first item** of `## Testing`, verbatim. It counts toward the 3800-character limit — shorten other sections, never the attestation.
+The attestation text from Step 5 — or the not-applicable line of 5.0 — is the **first item** of `## Testing`, verbatim. It counts toward the 3800-character limit — shorten other sections, never the attestation.
 
 ## Step 7: Create PR via Azure REST API
 **NEVER use `az repos pr create`** — use REST API via `az rest`.
@@ -140,7 +149,7 @@ If `az rest` fails for ANY other reason (encoding error, network, unexpected res
 ## Step 8: Update JIRA Issue
 If JIRA was validated:
 1. Add a comment with PR link + description (excluding Deployment and Assessment sections).
-2. Add the Step 5 attestation text as a **separate comment** with the PR link, so it stands on its own in the issue history. It carries the environment URL; keep it a working link after the ADF conversion.
+2. When Step 5 applied (5.0): add the Step 5 attestation text as a **separate comment** with the PR link, so it stands on its own in the issue history. It carries the environment URL; keep it a working link after the ADF conversion.
 - Convert markdown to Atlassian Document Format (ADF)
 - If the description comment fails: log the error but don't fail PR creation
 - If the **attestation comment** fails: the PR stays, but report the failure explicitly to the developer and hand over the attestation text to paste into Jira manually — never just log it
@@ -179,7 +188,7 @@ Report which policies are pending and who must vote — never infer approval sta
 ## 5 Mandatory Documentation Sections
 1. **JIRA Integration** — link, summary, business context
 2. **Code Changes** — what changed, why, how
-3. **Testing** — functional test attestation (Step 5) first, then automated tests, manual procedures, edge cases (⚠️ WARNING if no automated tests)
+3. **Testing** — functional test attestation (Step 5) first, or the 5.0 not-applicable line, then automated tests, manual procedures, edge cases (⚠️ WARNING if no automated tests)
 4. **Setup Guide** — prerequisites, steps, configuration
 5. **Architecture Review** — honest 1-5 star ratings: Code Architecture, Code Quality, Performance, Maintainability, Extensibility
 
@@ -188,5 +197,5 @@ Report which policies are pending and who must vote — never infer approval sta
 - No placeholder/simulated content
 - Accurate test state representation
 - Code review (Step 4) run on the final code, recommendation `approve` or every `fix` finding fixed or listed with a reason
-- Functional test attestation present in the PR (and in Jira when a Jira issue exists) — confirmed by the developer, never by the agent
+- Functional test attestation present in the PR (and in Jira when a Jira issue exists) — confirmed by the developer, never by the agent; in a repository without an AL app, the 5.0 not-applicable line instead
 - Honest architecture ratings (not everything is 5 stars)
