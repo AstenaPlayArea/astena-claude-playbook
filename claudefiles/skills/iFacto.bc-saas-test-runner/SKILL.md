@@ -91,7 +91,8 @@ Determine what to run based on user input:
 | Single codeunit name | Resolve the numeric ID from the workspace, then run |
 | Multiple codeunit IDs/names | Run `al runtests` once per codeunit ID; aggregate results |
 | Specific test method | Use `--testmethods <methodName>` |
-| No input / "all" | Ask with `AskUserQuestion` — running all codeunits is not supported in a single call. Offer the 3 test codeunits most likely meant (the ones touched by the current change, or the most recently modified in the workspace), each labelled with ID + name, and let "Other" take a codeunit you did not list |
+| `/iFacto.Pullrequest` Step 4 (the PR test gate) | Every test codeunit in the workspace (`Subtype = Test`), each run with all methods — do not ask. Any FAIL or ERROR is a hard stop for the PR |
+| No input / "all" (outside the PR gate) | Ask with `AskUserQuestion` — running all codeunits is not supported in a single call. Offer the 3 test codeunits most likely meant (the ones touched by the current change, or the most recently modified in the workspace), each labelled with ID + name, and let "Other" take a codeunit you did not list |
 
 If a codeunit name cannot be resolved to an ID in the workspace, warn the user and skip it — do not abort.
 
