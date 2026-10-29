@@ -18,5 +18,7 @@ description and comment thread), ranked findings each tied to a rule id / BCQual
 security category or marked `opinion`, notes, suppressed-by-exception, rules checked, and one
 word: `approve` / `fix` / `block` / `split`.
 
-Nothing is posted to DevOps and nothing is voted. To fix the findings, say **fix them** and the
-agent hands off to `iFacto.ALCoder`.
+Nothing is posted to DevOps and nothing is voted. To fix the findings, say **fix them**: when
+the workspace can run SDD (sandbox in `launch.json`, no QA configuration, a test app, findings
+that change behaviour) the agent tells you to run `/iFacto.SDD` with the findings; otherwise it
+hands off to `iFacto.ALCoder` and says which check ruled SDD out.
