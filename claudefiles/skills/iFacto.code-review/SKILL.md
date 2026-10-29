@@ -299,6 +299,23 @@ findings.
 
 ## After the report
 
-In local mode, offer to hand the findings to `iFacto.ALCoder` for fixing, then re-run this
-skill on the corrected files. In pr mode, say that posting a comment or voting is the devlead's
+In local mode, offer a fix route, then re-run this skill on the corrected files. Prefer
+`iFacto.SDD` over `iFacto.ALCoder`; check whether SDD can run before you offer it:
+
+| Check | SDD possible when |
+|---|---|
+| Sandbox | `.vscode/launch.json` has a configuration with `"environmentType": "Sandbox"` |
+| No QA | no configuration has `QA` (any casing) in its `"name"` or `"environmentName"` - SDD's own 🛑 gate |
+| Test project | the workspace holds a test app (an `app.json` that depends on the reviewed app) |
+| Testable | at least one finding changes behaviour (logic, validation, posting, calculation) - a test can fail on it |
+
+- **All four pass** → offer `/iFacto.SDD` with the behaviour findings (ids and Fix lines) as
+  its argument; findings that change no behaviour (naming, structure, nits) go along as plain
+  edits. SDD is started with the command in the developer's session, never with the `Agent`
+  tool - as the reviewer (or as a subagent) you only name the command.
+- **Any check fails** → offer `iFacto.ALCoder` and say in one line which check ruled SDD out,
+  so the developer can fix the setup (e.g. remove the QA configuration) and choose SDD next
+  time.
+
+In pr mode, say that posting a comment or voting is the devlead's
 call, made in CodeReview Nexus - this skill has produced a report, not a review of record.
