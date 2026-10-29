@@ -1,6 +1,6 @@
 # iFacto Claude Playbook
 
-The iFacto Claude Code plugin marketplace: the iFacto agents, slash commands and skills for
+The Astena Claude Code plugin marketplace: the iFacto agents, slash commands and skills for
 Microsoft Dynamics 365 Business Central (AL) development.
 
 **Generated — do not edit, pull requests are not accepted.** This repository is a published copy
